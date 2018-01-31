@@ -2608,13 +2608,13 @@ class Contour extends AbstractFilling(paper.Layer) {
 
     function go_go(segm) {
       const anext = find_next(segm);
-      for (let i = 0; i < anext.length; i++) {
-        if (anext[i] == curr) {
+      for (const next of anext) {
+        if (next === curr) {
           return anext;
         }
-        else if (acurr.every((el) => el != anext[i])) {
-          acurr.push(anext[i]);
-          return go_go(anext[i]);
+        else if (acurr.every((el) => el !== next)) {
+          acurr.push(next);
+          return go_go(next);
         }
       }
     }
@@ -2633,6 +2633,18 @@ class Contour extends AbstractFilling(paper.Layer) {
           segments.splice(ind, 1);
         }
       });
+    }
+
+    for(const gl of res) {
+      const remove = [];
+      for(const segm of gl) {
+        if(segm.b.is_nearest(segm.e, true)){
+          remove.push(segm);
+        }
+      }
+      for(const segm of remove) {
+        gl.splice(gl.indexOf(segm), 1);
+      }
     }
 
     return res;
@@ -2842,6 +2854,9 @@ class Contour extends AbstractFilling(paper.Layer) {
     }
 
     function push_new(profile, b, e, outer = false) {
+      if(b.is_nearest(e, 0)){
+        return;
+      }
       for(const segm of nodes) {
         if(segm.profile === profile && segm.b.equals(b) && segm.e.equals(e) && segm.outer == outer){
           return;
@@ -3224,6 +3239,9 @@ class Contour extends AbstractFilling(paper.Layer) {
       if (err) {
         elm.fill_error();
       }
+      else if(elm.path.is_self_intersected()) {
+        elm.fill_error();
+      }
       else {
         elm.path.fillColor = BuilderElement.clr_by_clr.call(elm, elm._row.clr, false);
       }
@@ -3353,7 +3371,7 @@ class Contour extends AbstractFilling(paper.Layer) {
     if (!properties) {
       return;
     }
-    const {length, width} = $p.job_prm.properties;
+    const {length, width} = properties;
 
     ox.inserts.find_rows({cnstr}, (row) => {
       if (row.inset.insert_type == $p.enm.inserts_types.Подоконник) {
@@ -4868,7 +4886,7 @@ class BuilderElement extends paper.Group {
     }
 
     if(this._row.elm_type.empty() && !this.inset.empty()){
-      this._row.elm_type = this.inset.nom().elm_type;
+      this._row.elm_type = this.nom.elm_type;
     }
 
     this.project.register_change();
@@ -5120,9 +5138,8 @@ class BuilderElement extends paper.Group {
   }
 
   get ref() {
-    const {inset} = this;
-    const nom = inset.nom(this);
-    return nom && !nom.empty() ? nom.ref : inset.ref;
+    const {nom} = this;
+    return nom && !nom.empty() ? nom.ref : this.inset.ref;
   }
 
   get width() {
@@ -5804,6 +5821,7 @@ class Filling extends AbstractFilling(BuilderElement) {
     }
 
     path.reduce();
+
   }
 
   get nodes() {
@@ -6346,12 +6364,36 @@ class GeneratrixElement extends BuilderElement {
 Object.defineProperties(paper.Path.prototype, {
 
   getDirectedAngle: {
-      value: function (point) {
-        var np = this.getNearestPoint(point),
-          offset = this.getOffsetOf(np);
-        return this.getTangentAt(offset).getDirectedAngle(point.add(np.negate()));
-      }
-    },
+    value: function (point) {
+      const np = this.getNearestPoint(point),
+        offset = this.getOffsetOf(np);
+      return this.getTangentAt(offset).getDirectedAngle(point.add(np.negate()));
+    }
+  },
+
+  is_self_intersected: {
+    value: function () {
+      const {curves} = this;
+      return curves.some((crv1, i1) => {
+        return curves.some((crv2, i2) => {
+          const intersections = crv1.getIntersections(crv2);
+          if(intersections.length) {
+            if(intersections.length > 1) {
+              return true;
+            }
+            const {point} = intersections[0];
+            if(crv2.point1.is_nearest(crv1.point2, 0) && point.is_nearest(crv1.point2, 0)) {
+              return false;
+            }
+            if(crv1.point1.is_nearest(crv2.point2, 0) && point.is_nearest(crv1.point1, 0)) {
+              return false;
+            }
+            return true;
+          };
+        })
+      })
+    }
+  },
 
   angle_to: {
       value : function(other, point, interior, round){
@@ -6389,6 +6431,12 @@ Object.defineProperties(paper.Path.prototype, {
         return true;
       }
     },
+
+  is_nearest: {
+    value: function (point, sticking) {
+      return point.is_nearest(this.getNearestPoint(point), sticking);
+    }
+  },
 
   get_subpath: {
       value: function (point1, point2) {
@@ -6571,6 +6619,15 @@ Object.defineProperties(paper.Path.prototype, {
         }
       }
     },
+
+  point_pos: {
+    value: function (point, interior) {
+      const np = this.getNearestPoint(interior);
+      const offset = this.getOffsetOf(np);
+      const line = new paper.Line(np, np.add(this.getTangentAt(offset)));
+      return line.getSide(point, true);
+    }
+  },
 
   rmin: {
     value: function() {
@@ -7702,9 +7759,8 @@ class ProfileItem extends GeneratrixElement {
     const _profile = this;
     const {_corns} = _attr;
 
-    let normal;
 
-    function intersect_point(path1, path2, index) {
+    function intersect_point(path1, path2, index, ipoint = cnn_point.point) {
       const intersections = path1.getIntersections(path2);
       let delta = Infinity, tdelta, point, tpoint;
 
@@ -7713,12 +7769,12 @@ class ProfileItem extends GeneratrixElement {
           _corns[index] = intersections[0].point;
         }
         else {
-          return intersections[0].point.getDistance(cnn_point.point, true);
+          return intersections[0].point.getDistance(ipoint, true);
         }
       }
       else if(intersections.length > 1) {
         intersections.forEach((o) => {
-          tdelta = o.point.getDistance(cnn_point.point, true);
+          tdelta = o.point.getDistance(ipoint, true);
           if(tdelta < delta) {
             delta = tdelta;
             point = o.point;
@@ -7743,26 +7799,78 @@ class ProfileItem extends GeneratrixElement {
 
       !cnn_point.profile.path.segments.length && cnn_point.profile.redraw();
 
-      if(profile_point == 'b') {
-        if(cnn_point.profile.cnn_side(this, null, prays) === $p.enm.cnn_sides.Снаружи) {
-          intersect_point(prays.outer, rays.outer, 1);
-          intersect_point(prays.outer, rays.inner, 4);
+      const nodes = new Set();
+      let profile2;
+      cnn_point.point && this.layer.profiles.forEach((profile) => {
+        if(profile !== this){
+          if(cnn_point.point.is_nearest(profile.b, true)) {
+            const cp = profile.cnn_point('b').profile;
+            if(cp !== this) {
+              if(cp !== cnn_point.profile || cnn_point.profile.cnn_side(this) === cnn_point.profile.cnn_side(profile)) {
+                nodes.add(profile);
+              }
+            }
+          }
+          else if(cnn_point.point.is_nearest(profile.e, true)) {
+            const cp = profile.cnn_point('e').profile;
+            if(cp !== this) {
+              if(cp !== cnn_point.profile || cnn_point.profile.cnn_side(this) === cnn_point.profile.cnn_side(profile)) {
+                nodes.add(profile);
+              }
+            }
+          }
+          else if(profile.generatrix.is_nearest(cnn_point.point, true)) {
+            nodes.add(profile);
+          }
         }
-        else {
-          intersect_point(prays.inner, rays.outer, 1);
-          intersect_point(prays.inner, rays.inner, 4);
+      });
+      nodes.forEach((p2) => {
+        if(p2 !== cnn_point.profile) {
+          profile2 = p2;
+        }
+      });
+
+      const side = cnn_point.profile.cnn_side(this, null, prays) === $p.enm.cnn_sides.Снаружи ? 'outer' : 'inner';
+
+      if(profile2) {
+        const interior = generatrix.getPointAt(generatrix.length/2)
+        const prays2 = profile2 && profile2.rays;
+        const side2 = profile2.cnn_side(this, null, prays2) === $p.enm.cnn_sides.Снаружи ? 'outer' : 'inner';
+        const pt1 = intersect_point(prays[side], rays.outer, 0, interior);
+        const pt2 = intersect_point(prays[side], rays.inner, 0, interior);
+        const pt3 = intersect_point(prays2[side2], rays.outer, 0, interior);
+        const pt4 = intersect_point(prays2[side2], rays.inner, 0, interior);
+
+        if(profile_point == 'b') {
+          pt1 < pt3 ? intersect_point(prays[side], rays.outer, 1) : intersect_point(prays2[side2], rays.outer, 1);
+          pt2 < pt4 ? intersect_point(prays[side], rays.inner, 4) : intersect_point(prays2[side2], rays.inner, 4);
+          intersect_point(prays2[side2], prays[side], 5);
+          if(rays.inner.point_pos(_corns[5]) >= 0 || rays.outer.point_pos(_corns[5]) >= 0) {
+            delete _corns[5];
+          }
+        }
+        else if(profile_point == 'e') {
+          pt1 < pt3 ? intersect_point(prays[side], rays.outer, 2) : intersect_point(prays2[side2], rays.outer, 2);
+          pt2 < pt4 ? intersect_point(prays[side], rays.inner, 3) : intersect_point(prays2[side2], rays.inner, 3);
+          intersect_point(prays2[side2], prays[side], 6);
+          if(rays.inner.point_pos(_corns[6]) >= 0 || rays.outer.point_pos(_corns[6]) >= 0) {
+            delete _corns[6];
+          }
         }
       }
-      else if(profile_point == 'e') {
-        if(cnn_point.profile.cnn_side(this, null, prays) === $p.enm.cnn_sides.Снаружи) {
-          intersect_point(prays.outer, rays.outer, 2);
-          intersect_point(prays.outer, rays.inner, 3);
+      else {
+        if(profile_point == 'b') {
+          intersect_point(prays[side], rays.outer, 1);
+          intersect_point(prays[side], rays.inner, 4);
+          delete _corns[5];
         }
-        else {
-          intersect_point(prays.inner, rays.outer, 2);
-          intersect_point(prays.inner, rays.inner, 3);
+        else if(profile_point == 'e') {
+          intersect_point(prays[side], rays.outer, 2);
+          intersect_point(prays[side], rays.inner, 3);
+          delete _corns[6];
         }
       }
+
     }
     else if(cnn_type == cnn_types.xx) {
 
@@ -7951,8 +8059,8 @@ class ProfileItem extends GeneratrixElement {
   }
 
   is_nearest(p) {
-    return (this.b.is_nearest(p.b, true) || this.generatrix.getNearestPoint(p.b).is_nearest(p.b)) &&
-      (this.e.is_nearest(p.e, true) || this.generatrix.getNearestPoint(p.e).is_nearest(p.e));
+    return (this.b.is_nearest(p.b, true) || this.generatrix.is_nearest(p.b)) &&
+      (this.e.is_nearest(p.e, true) || this.generatrix.is_nearest(p.e));
   }
 
   is_collinear(p) {
@@ -8216,19 +8324,19 @@ class Profile extends ProfileItem {
       }
       const {generatrix} = elm;
       let is_nearest = [];
-      if(generatrix.getNearestPoint(b).is_nearest(b)) {
+      if(generatrix.is_nearest(b)) {
         is_nearest.push(b);
       }
-      if(generatrix.getNearestPoint(e).is_nearest(e)) {
+      if(generatrix.is_nearest(e)) {
         is_nearest.push(e);
       }
       if(is_nearest.length < 2 && elm instanceof ProfileConnective) {
-        if(this.generatrix.getNearestPoint(elm.b).is_nearest(elm.b)) {
+        if(this.generatrix.is_nearest(elm.b)) {
           if(is_nearest.every((point) => !point.is_nearest(elm.b))) {
             is_nearest.push(elm.b);
           }
         }
-        if(this.generatrix.getNearestPoint(elm.e).is_nearest(elm.e)) {
+        if(this.generatrix.is_nearest(elm.e)) {
           if(is_nearest.every((point) => !point.is_nearest(elm.e))) {
             is_nearest.push(elm.e);
           }
@@ -8282,9 +8390,10 @@ class Profile extends ProfileItem {
 
     const candidates = {b: [], e: []};
 
+    const {Снаружи} = $p.enm.cnn_sides;
     const add_impost = (ip, curr, point) => {
       const res = {point: generatrix.getNearestPoint(point), profile: curr};
-      if(this.cnn_side(curr, ip, rays) === $p.enm.cnn_sides.Снаружи) {
+      if(this.cnn_side(curr, ip, rays) === Снаружи) {
         touter.push(res);
       }
       else {
@@ -8317,7 +8426,7 @@ class Profile extends ProfileItem {
     ['b', 'e'].forEach((node) => {
       if(candidates[node].length > 1) {
         candidates[node].some((ip) => {
-          if(this.cnn_side(null, ip, rays) == $p.enm.cnn_sides.Снаружи) {
+          if(this.cnn_side(null, ip, rays) === Снаружи) {
             this.cnn_point(node).is_cut = true;
             return true;
           }
@@ -10110,33 +10219,30 @@ class Scheme extends paper.Project {
   check_inset(attr) {
     const inset = attr.inset ? attr.inset : attr.elm.inset;
     const elm_type = attr.elm ? attr.elm.elm_type : attr.elm_type;
-    const nom = inset.nom();
     const rows = [];
 
-    if(!nom || nom.empty()) {
-      return inset;
-    }
-
-    this._dp.sys.elmnts.each(function (row) {
-      if((elm_type ? row.elm_type == elm_type : true) && row.nom.nom() == nom) {
+    let finded;
+    this._dp.sys.elmnts.forEach((row) => {
+      if((elm_type ? row.elm_type == elm_type : true)) {
+        if(row.nom === inset) {
+          finded = true;
+          return false;
+        }
         rows.push(row);
       }
     });
 
 
-    for (var i = 0; i < rows.length; i++) {
-      if(rows[i].nom == inset) {
-        return inset;
-      }
+    if(finded) {
+      return inset;
     }
-
     if(rows.length) {
       return rows[0].nom;
     }
+
   }
 
   check_distance(element, profile, res, point, check_only) {
-    const {allow_open_cnn} = this._dp.sys;
     const {acn} = $p.enm.cnn_types;
 
     let distance, gp, cnns, addls,
@@ -10146,7 +10252,7 @@ class Scheme extends paper.Project {
 
     function check_node_distance(node) {
 
-      if((distance = element[node].getDistance(point)) < (allow_open_cnn ? parseFloat(consts.sticking_l) : consts.sticking)) {
+      if((distance = element[node].getDistance(point)) < parseFloat(consts.sticking_l)) {
 
         if(typeof res.distance == 'number' && res.distance < distance) {
           res.profile = element;

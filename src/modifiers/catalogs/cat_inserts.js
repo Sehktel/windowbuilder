@@ -10,7 +10,7 @@
 
 // подписываемся на событие после загрузки из pouchdb-ram и готовности предопределенных
 $p.md.once('predefined_elmnts_inited', () => {
-  $p.cat.scheme_settings.find_schemas('dp.buyers_order.production');
+  $p.cat.scheme_settings && $p.cat.scheme_settings.find_schemas('dp.buyers_order.production');
 });
 
 $p.cat.inserts.__define({
@@ -150,14 +150,30 @@ $p.CatInserts = class CatInserts extends $p.CatInserts {
   nom(elm, strict) {
 
     const {_data} = this;
-    if(!strict && _data.nom){
+
+    if(!strict && !elm && _data.nom) {
       return _data.nom;
     }
 
     const main_rows = [];
     let _nom;
 
-    this.specification.find_rows({is_main_elm: true}, (row) => main_rows.push(row));
+    const {check_params} = ProductsBuilding;
+
+    this.specification.find_rows({is_main_elm: true}, (row) => {
+      // если есть элемент, фильтруем по параметрам
+      if(elm && !check_params({
+          params: this.selection_params,
+          ox: elm.project.ox,
+          elm: elm,
+          row_spec: row,
+          cnstr: 0,
+          origin: elm.fake_origin || 0,
+        })) {
+        return;
+      }
+      main_rows.push(row)
+    });
 
     if(!main_rows.length && !strict && this.specification.count()){
       main_rows.push(this.specification.get(0))
@@ -307,15 +323,14 @@ $p.CatInserts = class CatInserts extends $p.CatInserts {
         if(!elm.joined_imposts(true)){
           return false;
         }
-
-      }else if(row.impost_fixation == $p.enm.impost_mount_options.НетКрепленийИмпостовИРам){
+      }
+      else if(row.impost_fixation == $p.enm.impost_mount_options.НетКрепленийИмпостовИРам){
         if(elm.joined_imposts(true)){
           return false;
         }
       }
       is_tabular = false;
     }
-
 
     if(!is_tabular || by_perimetr || row.count_calc_method != $p.enm.count_calculating_ways.ПоПериметру){
       if(row.lmin > len || (row.lmax < len && row.lmax > 0)){
@@ -495,18 +510,17 @@ $p.CatInserts = class CatInserts extends $p.CatInserts {
             if(this.check_restrictions(row_ins_spec, row_prm, true)){
               row_spec = new_spec_row({elm, row_base: row_ins_spec, origin, spec, ox});
               // при расчете по периметру, выполняем формулу для каждого ребра периметра
-              if(!row_ins_spec.formula.empty()){
-                const qty = row_ins_spec.formula.execute({
-                  ox: ox,
-                  elm: rib.profile || rib,
-                  cnstr: len_angl && len_angl.cnstr || 0,
-                  inset: (len_angl && len_angl.hasOwnProperty('cnstr')) ? len_angl.origin : $p.utils.blank.guid,
-                  row_ins: row_ins_spec,
-                  row_spec: row_spec,
-                  len: rib.len
-                });
-              }
-              calc_qty_len(row_spec, row_ins_spec, rib.len);
+              const qty = !row_ins_spec.formula.empty() && row_ins_spec.formula.execute({
+                ox: ox,
+                elm: rib.profile || rib,
+                cnstr: len_angl && len_angl.cnstr || 0,
+                inset: (len_angl && len_angl.hasOwnProperty('cnstr')) ? len_angl.origin : $p.utils.blank.guid,
+                row_ins: row_ins_spec,
+                row_spec: row_spec,
+                len: rib.len
+              });
+              // если формула не вернула значение, устанавливаем qty_len стандартным способом
+              !qty && calc_qty_len(row_spec, row_ins_spec, rib.len);
               calc_count_area_mass(row_spec, spec, _row, row_ins_spec.angle_calc_method);
             }
             row_spec = null;

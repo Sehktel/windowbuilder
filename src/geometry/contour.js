@@ -385,13 +385,13 @@ class Contour extends AbstractFilling(paper.Layer) {
     // рекурсивно получает следующий сегмент, пока не уткнётся в текущий
     function go_go(segm) {
       const anext = find_next(segm);
-      for (let i = 0; i < anext.length; i++) {
-        if (anext[i] == curr) {
+      for (const next of anext) {
+        if (next === curr) {
           return anext;
         }
-        else if (acurr.every((el) => el != anext[i])) {
-          acurr.push(anext[i]);
-          return go_go(anext[i]);
+        else if (acurr.every((el) => el !== next)) {
+          acurr.push(next);
+          return go_go(next);
         }
       }
     }
@@ -411,6 +411,19 @@ class Contour extends AbstractFilling(paper.Layer) {
           segments.splice(ind, 1);
         }
       });
+    }
+
+    // прочищаем
+    for(const gl of res) {
+      const remove = [];
+      for(const segm of gl) {
+        if(segm.b.is_nearest(segm.e, true)){
+          remove.push(segm);
+        }
+      }
+      for(const segm of remove) {
+        gl.splice(gl.indexOf(segm), 1);
+      }
     }
 
     return res;
@@ -654,6 +667,9 @@ class Contour extends AbstractFilling(paper.Layer) {
     }
 
     function push_new(profile, b, e, outer = false) {
+      if(b.is_nearest(e, 0)){
+        return;
+      }
       for(const segm of nodes) {
         if(segm.profile === profile && segm.b.equals(b) && segm.e.equals(e) && segm.outer == outer){
           return;
@@ -1119,6 +1135,9 @@ class Contour extends AbstractFilling(paper.Layer) {
       if (err) {
         elm.fill_error();
       }
+      else if(elm.path.is_self_intersected()) {
+        elm.fill_error();
+      }
       else {
         elm.path.fillColor = BuilderElement.clr_by_clr.call(elm, elm._row.clr, false);
       }
@@ -1263,7 +1282,7 @@ class Contour extends AbstractFilling(paper.Layer) {
       return;
     }
     // указатели на параметры длина и ширина
-    const {length, width} = $p.job_prm.properties;
+    const {length, width} = properties;
 
     ox.inserts.find_rows({cnstr}, (row) => {
       if (row.inset.insert_type == $p.enm.inserts_types.Подоконник) {

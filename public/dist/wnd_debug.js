@@ -71,7 +71,7 @@ $p.CatCharacteristics = class CatCharacteristics extends $p.CatCharacteristics {
   }
 
   prod_name(short) {
-    const {calc_order_row, calc_order, leading_product, sys, clr} = this;
+    const {calc_order_row, calc_order, leading_product, sys, clr, origin} = this;
     let name = '';
 
     if(calc_order_row) {
@@ -106,6 +106,9 @@ $p.CatCharacteristics = class CatCharacteristics extends $p.CatCharacteristics {
 
       if(!sys.empty()) {
         name += '/' + sys.name;
+      }
+      else if(!origin.empty()) {
+        name += '/' + origin.name;
       }
 
       if(!short) {
@@ -266,9 +269,6 @@ $p.CatCharacteristicsInsertsRow.prototype.value_change = function (field, type, 
     }
   }
 }
-
-
-
 
 $p.cat.characteristics.form_obj = function (pwnd, attr) {
 
@@ -1071,15 +1071,18 @@ $p.cat.contracts.__define({
 	},
 
 	by_partner_and_org: {
-		value: function (partner, organization, contract_kind) {
-			if(!contract_kind)
-				contract_kind = $p.enm.contract_kinds.СПокупателем;
-			var res = this.find_rows({owner: partner, organization: organization, contract_kind: contract_kind});
-			res.sort(function (a, b) {
-				return a.date > b.date;
-			});
-			return res.length ? res[0] : this.get();
-		}
+    value: function (partner, organization, contract_kind = $p.enm.contract_kinds.СПокупателем) {
+
+      const {main_contract} = $p.cat.partners.get(partner);
+
+      if(main_contract && main_contract.contract_kind == contract_kind && main_contract.organization == organization){
+        return main_contract;
+      }
+
+      const res = this.find_rows({owner: partner, organization: organization, contract_kind: contract_kind});
+      res.sort((a, b) => a.date > b.date);
+      return res.length ? res[0] : this.get();
+    }
 	}
 
 
@@ -1636,7 +1639,7 @@ $p.CatFurnsSpecificationRow = class CatFurnsSpecificationRow extends $p.CatFurns
 
 
 $p.md.once('predefined_elmnts_inited', () => {
-  $p.cat.scheme_settings.find_schemas('dp.buyers_order.production');
+  $p.cat.scheme_settings && $p.cat.scheme_settings.find_schemas('dp.buyers_order.production');
 });
 
 $p.cat.inserts.__define({
@@ -1764,14 +1767,29 @@ $p.CatInserts = class CatInserts extends $p.CatInserts {
   nom(elm, strict) {
 
     const {_data} = this;
-    if(!strict && _data.nom){
+
+    if(!strict && !elm && _data.nom) {
       return _data.nom;
     }
 
     const main_rows = [];
     let _nom;
 
-    this.specification.find_rows({is_main_elm: true}, (row) => main_rows.push(row));
+    const {check_params} = ProductsBuilding;
+
+    this.specification.find_rows({is_main_elm: true}, (row) => {
+      if(elm && !check_params({
+          params: this.selection_params,
+          ox: elm.project.ox,
+          elm: elm,
+          row_spec: row,
+          cnstr: 0,
+          origin: elm.fake_origin || 0,
+        })) {
+        return;
+      }
+      main_rows.push(row)
+    });
 
     if(!main_rows.length && !strict && this.specification.count()){
       main_rows.push(this.specification.get(0))
@@ -1903,15 +1921,14 @@ $p.CatInserts = class CatInserts extends $p.CatInserts {
         if(!elm.joined_imposts(true)){
           return false;
         }
-
-      }else if(row.impost_fixation == $p.enm.impost_mount_options.НетКрепленийИмпостовИРам){
+      }
+      else if(row.impost_fixation == $p.enm.impost_mount_options.НетКрепленийИмпостовИРам){
         if(elm.joined_imposts(true)){
           return false;
         }
       }
       is_tabular = false;
     }
-
 
     if(!is_tabular || by_perimetr || row.count_calc_method != $p.enm.count_calculating_ways.ПоПериметру){
       if(row.lmin > len || (row.lmax < len && row.lmax > 0)){
@@ -2063,18 +2080,16 @@ $p.CatInserts = class CatInserts extends $p.CatInserts {
             row_prm.is_linear = () => rib.profile ? rib.profile.is_linear() : true;
             if(this.check_restrictions(row_ins_spec, row_prm, true)){
               row_spec = new_spec_row({elm, row_base: row_ins_spec, origin, spec, ox});
-              if(!row_ins_spec.formula.empty()){
-                const qty = row_ins_spec.formula.execute({
-                  ox: ox,
-                  elm: rib.profile || rib,
-                  cnstr: len_angl && len_angl.cnstr || 0,
-                  inset: (len_angl && len_angl.hasOwnProperty('cnstr')) ? len_angl.origin : $p.utils.blank.guid,
-                  row_ins: row_ins_spec,
-                  row_spec: row_spec,
-                  len: rib.len
-                });
-              }
-              calc_qty_len(row_spec, row_ins_spec, rib.len);
+              const qty = !row_ins_spec.formula.empty() && row_ins_spec.formula.execute({
+                ox: ox,
+                elm: rib.profile || rib,
+                cnstr: len_angl && len_angl.cnstr || 0,
+                inset: (len_angl && len_angl.hasOwnProperty('cnstr')) ? len_angl.origin : $p.utils.blank.guid,
+                row_ins: row_ins_spec,
+                row_spec: row_spec,
+                len: rib.len
+              });
+              !qty && calc_qty_len(row_spec, row_ins_spec, rib.len);
               calc_count_area_mass(row_spec, spec, _row, row_ins_spec.angle_calc_method);
             }
             row_spec = null;
@@ -2904,12 +2919,6 @@ class Pricing {
       prm.spec.aggregate([], ["amount_marged"]) :
       this.nom_price(calc_order_row.nom, calc_order_row.characteristic, price_type.price_type_sale, prm, {});
 
-    let extra_charge = $p.wsql.get_user_param("surcharge_internal", "number");
-
-    if(!$p.current_user.partners_uids.length || !extra_charge){
-      extra_charge = price_type.extra_charge_external;
-    }
-
     if(price_cost){
       calc_order_row.price = price_cost.round(2);
     }
@@ -2921,11 +2930,13 @@ class Pricing {
       calc_order_row.price * ((100 - calc_order_row.discount_percent)/100) / calc_order_row.first_cost : 0;
 
 
-    if(extra_charge){
-      calc_order_row.price_internal = (calc_order_row.price *
-      (100 - calc_order_row.discount_percent)/100 * (100 + extra_charge)/100).round(2);
-
+    let extra_charge = $p.wsql.get_user_param("surcharge_internal", "number");
+    if(!$p.current_user.partners_uids.length || !extra_charge){
+      extra_charge = price_type.extra_charge_external || 0;
     }
+
+    calc_order_row.price_internal = (calc_order_row.price *
+      (100 - calc_order_row.discount_percent)/100 * (100 + extra_charge)/100).round(2);
 
     !prm.hand_start && calc_order_row.value_change("price", {}, calc_order_row.price, true);
 
@@ -3881,6 +3892,9 @@ class ProductsBuilding {
 
 }
 
+if(typeof global !== 'undefined'){
+  global.ProductsBuilding = ProductsBuilding;
+}
 $p.ProductsBuilding = ProductsBuilding;
 $p.products_building = new ProductsBuilding(true);
 
@@ -4172,6 +4186,8 @@ $p.DocCalc_order = class DocCalc_order extends $p.DocCalc_order {
       _obj.state = 'draft';
     }
 
+    this.product_rows(true);
+
     this._manager.pouch_db.query('svgs', {startkey: [this.ref, 0], endkey: [this.ref, 10e9]})
       .then(({rows}) => {
         const deleted = [];
@@ -4206,6 +4222,11 @@ $p.DocCalc_order = class DocCalc_order extends $p.DocCalc_order {
 
   }
 
+  after_del_row(name) {
+    name === 'production' && this.product_rows();
+    return this;
+  }
+
 
   get doc_currency() {
     const currency = this.contract.settlements_currency;
@@ -4231,11 +4252,24 @@ $p.DocCalc_order = class DocCalc_order extends $p.DocCalc_order {
   get contract() {
     return this._getter('contract');
   }
-
   set contract(v) {
     this._setter('contract', v);
     this.vat_consider = this.contract.vat_consider;
     this.vat_included = this.contract.vat_included;
+  }
+
+  product_rows(save) {
+    this.production.forEach(({row, characteristic}) => {
+      if(!characteristic.empty() && !characteristic.is_new() && characteristic.calc_order === this && characteristic.product !== row) {
+        characteristic.product = row;
+        if(save) {
+          characteristic.save();
+        }
+        else{
+          characteristic.name = characteristic.prod_name();
+        }
+      }
+    });
   }
 
   dispatching_totals() {
@@ -4598,7 +4632,7 @@ $p.DocCalc_order = class DocCalc_order extends $p.DocCalc_order {
     const prod = [];
     const {characteristics} = $p.cat;
     this.production.forEach(({nom, characteristic}) => {
-      if(!characteristic.empty() && (forse || characteristic.is_new()) && !nom.is_procedure && !nom.is_accessory) {
+      if(!characteristic.empty() && (forse || characteristic.is_new())) {
         prod.push(characteristic.ref);
       }
     });
@@ -4606,8 +4640,10 @@ $p.DocCalc_order = class DocCalc_order extends $p.DocCalc_order {
       .then(() => {
         prod.length = 0;
         this.production.forEach(({nom, characteristic}) => {
-          if(!characteristic.empty() && !nom.is_procedure && !nom.is_accessory) {
-            prod.push(characteristic);
+          if(!characteristic.empty()) {
+            if((!nom.is_procedure && !nom.is_accessory) || characteristic.specification.count() || characteristic.constructions.count() || characteristic.coordinates.count()){
+              prod.push(characteristic);
+            }
           }
         });
         return prod;
@@ -4671,10 +4707,7 @@ $p.DocCalc_order = class DocCalc_order extends $p.DocCalc_order {
       cx = Promise.resolve(ox);
       return false;
     }
-    if(row.characteristic.empty()){
-      mgr.find_rows({calc_order: this, product: row.row}, fill_cx);
-    }
-    else if(!row.characteristic._deleted){
+    if(!row.characteristic.empty() && !row.characteristic._deleted){
       fill_cx(row.characteristic);
     }
 
@@ -4685,7 +4718,17 @@ $p.DocCalc_order = class DocCalc_order extends $p.DocCalc_order {
     }, true))
       .then((ox) => {
         if(row_spec instanceof $p.DpBuyers_orderProductionRow) {
-          ox.owner = row_spec.inset.nom(elm, true);
+
+          if(params) {
+            params.find_rows({elm: row_spec.row}, (prow) => {
+              ox.params.add(prow, true).inset = row_spec.inset;
+            });
+          }
+
+          elm.project = {ox};
+          elm.fake_origin = row_spec.inset;
+
+          ox.owner = row_spec.inset.nom(elm);
           ox.origin = row_spec.inset;
           ox.x = row_spec.len;
           ox.y = row_spec.height;
@@ -4694,11 +4737,6 @@ $p.DocCalc_order = class DocCalc_order extends $p.DocCalc_order {
           ox.clr = row_spec.clr;
           ox.note = row_spec.note;
 
-          if(params) {
-            params.find_rows({elm: row_spec.row}, (prow) => {
-              ox.params.add(prow, true).inset = row_spec.inset;
-            });
-          }
         }
 
         Object.assign(row._obj, {
@@ -7656,6 +7694,13 @@ class eXcell_addr extends eXcell {
   }
 
   ti_keydown(e) {
+    if(e.keyCode === 8 || e.keyCode === 46){          
+      const {obj} = this.grid.get_cell_field();
+      obj.shipping_address = '';
+      obj.address_fields = '';
+      this.grid.editStop();
+      return $p.iface.cancel_bubble(e);
+    }
     return eXcell_ocombo.prototype.input_keydown(e, this);
   }
 
