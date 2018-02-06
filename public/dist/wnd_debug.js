@@ -1149,7 +1149,7 @@ Object.defineProperties($p.cat.divisions, {
     value: function (selection, val) {
       const list = [];
       $p.current_user.acl_objs.find_rows({type: "cat.divisions"}, ({acl_obj}) => {
-        if(list.indexOf(acl_obj) == -1){
+        if(acl_obj && list.indexOf(acl_obj) == -1){
           list.push(acl_obj);
           acl_obj._children().forEach((o) => list.indexOf(o) == -1 && list.push(o));
         }
@@ -2232,8 +2232,10 @@ $p.CatInserts = class CatInserts extends $p.CatInserts {
         _data.thickness = nom.thickness;
       }
       else{
-        this.specification.forEach((row) => {
-          _data.thickness += row.nom.thickness;
+        this.specification.forEach(({nom}) => {
+          if(nom) {
+            _data.thickness += nom.thickness;
+          }
         });
       }
     }
