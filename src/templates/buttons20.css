@@ -2,6 +2,14 @@
 	background-repeat: no-repeat;
 	background-position: 4px;
 }
+[class*="tb_jalousie"] {
+  width: 28px;
+  height: 24px;
+  float: left;
+  background-position: 2px;
+  margin-right: 4px;
+}
+
 /* .tb_open { background-image: url(/imgs/open.png);} */
 .tb_align_bottom { background-image: url(/imgs/align_bottom.png); opacity: 0.9;}
 .tb_align_left { background-image: url(/imgs/align_left.png); opacity: 0.9;}
@@ -17,9 +25,36 @@
 .tb_cursor-lay-impost { background-image: url(/imgs/cursor-lay-impost.png);}
 .tb_cursor-arc-r { background-image: url(/imgs/cursor-arc-r.png);}
 .tb_cursor-cut { background-image: url(/imgs/cursor-cut.png);}
+.tb_cursor-uncut { background-image: url(/imgs/cursor-uncut.png);}
+.tb_cursor-hv { background-image: url(/imgs/cursor-hv.png);}
+.tb_cursor-vh { background-image: url(/imgs/cursor-vh.png);}
+.tb_cursor-diagonal { background-image: url(/imgs/cursor-diagonal.png);}
 .tb_ruler_ui { background-image: url(/imgs/ruler_ui.png);}
 .tb_stamp { background-image: url(/imgs/stamp.png);}
 .tb_grid { background-image: url(/imgs/grid.png);}
 .tb_line { background-image: url(/imgs/line.png);}
 .tb_text { background-image: url(/imgs/text.png);}
 
+.tb_disable { pointer-events: none; opacity: 0.4}
+
+.tb_jalousie_control-move-rotate { background-image: url(/imgs/jalousie/control-move-rotate.png);}
+.tb_jalousie_control-move-vertical { background-image: url(/imgs/jalousie/control-move-vertical.png);}
+.tb_jalousie_control-remote { background-image: url(/imgs/jalousie/control-remote.png);}
+.tb_jalousie_control-side-left, .tb_jalousie_control-side-right { background-image: url(/imgs/jalousie/control-side-left.png);}
+.tb_jalousie_control-side-right {transform: scale(-1, 1);}
+.tb_jalousie_horizontal { background-image: url(/imgs/jalousie/horizontal.png);}
+.tb_jalousie_vertical { background-image: url(/imgs/jalousie/vertical.png);}
+.tb_jalousie_roller { background-image: url(/imgs/jalousie/roller.png);}
+.tb_jalousie_install-type-a { background-image: url(/imgs/jalousie/install-type-a.png);}
+.tb_jalousie_install-type-b { background-image: url(/imgs/jalousie/install-type-b.png);}
+.tb_jalousie_install-type-c { background-image: url(/imgs/jalousie/install-type-c.png);}
+.tb_jalousie_install-type-d { background-image: url(/imgs/jalousie/install-type-d.png);}
+.tb_jalousie_install-type-d { background-image: url(/imgs/jalousie/install-type-d.png);}
+.tb_jalousie_open-left-from-center, .tb_jalousie_open-right-from-center { background-image: url(/imgs/jalousie/open-left-from-center.png);}
+.tb_jalousie_open-right-from-center {transform: scale(-1, 1);}
+.tb_jalousie_open-left-from-center, .tb_jalousie_open-right-from-center { background-image: url(/imgs/jalousie/open-left-from-control.png);}
+.tb_jalousie_open-right-from-center { transform: scale(-1, 1);}
+.tb_jalousie_open-left-to-center, .tb_jalousie_open-right-to-center { background-image: url(/imgs/jalousie/open-left-to-center.png);}
+.tb_jalousie_open-right-to-center {transform: scale(-1, 1);}
+.tb_jalousie_open-left-to-control, .tb_jalousie_open-right-to-control { background-image: url(/imgs/jalousie/open-left-to-center.png);}
+.tb_jalousie_open-right-to-control {transform: scale(-1, 1);}

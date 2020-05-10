@@ -7,22 +7,24 @@
 # Exclude compiled files
 build/
 data/
-dist/windowbuilder.css
-dist/windowbuilder.js
-dist/wnd_debug.js
-dist/worker.js
 doc/out/
 lib/
 public/dist/dhtmlx_debug.js
+<<<<<<< HEAD
 public/dist/windowbuilder.js
 public/dist/windowbuilder.css
 public/dist/wnd_debug.js
+=======
+public/templates/
+public/ram/
+>>>>>>> 09491525614f27608dc715f0a366899e8bda9850
 src/metadata-ui
 src/templates/imgs
 src/templates/printing_plates/20160408/
 src/templates/printing_plates/invoice_signature.png
 src/zarchive/socket_1c/
 zarchive/
+/scripts/stats.json
 
 # npm files
 node_modules

@@ -7,14 +7,32 @@ import settings from '../../config/app.settings';
 import {patch_prm, patch_cnn} from '../../config/patch_cnn';
 
 // генератор события META_LOADED для redux
-import {metaActions} from 'metadata-redux';
+import {addMiddleware} from 'redux-dynamic-middlewares';
+// стандартные события pouchdb и метаданных
+import {metaActions, metaMiddleware} from 'metadata-redux';
+// дополнительные события pouchdb
+import {customPouchMiddleware} from '../redux/reducers/pouchdb';
+
+// читаем скрипт инициализации метаданных, полученный в результате выполнения meta:prebuild
+import meta_init from 'windowbuilder/dist/init';
+import modifiers from './modifiers';
+import proxy_login, {load_ram, load_common} from 'metadata-superlogin/proxy';
 
 // загружаем metadata.transition и экспортируем $p глобально
 import $p from 'metadata-dhtmlx';
 
+if (process.env.NODE_ENV === 'development') {
+  import('pouchdb-debug')
+    .then((module) => $p.classes.PouchDB.plugin(module.default));
+}
+
 // подключаем react-специфичные методы
 import plugin_react from 'metadata-react/plugin';
 plugin_react.constructor.call($p);
+
+// подключаем cron
+import cron from 'metadata-abstract-ui/cron';
+cron.constructor.call($p);
 
 import reset_cache from './reset_cache';
 
@@ -24,47 +42,75 @@ global.$p = $p;
 $p.wsql.init(patch_prm(settings));
 patch_cnn();
 
+// со скрипом инициализации метаданных, так же - не затягиваем
+meta_init($p);
+
+// запускаем проверку единственности экземпляра
+$p.utils.single_instance_checker.init();
+
 // скрипт инициализации в привязке к store приложения
-export function init(dispatch) {
+export function init(store) {
 
-  // читаем скрипт инициализации метаданных, полученный в результате выполнения meta:prebuild
-  return import('./init')
-    .then((meta_init) => {
+  try {
 
-      // выполняем скрипт инициализации метаданных
-      meta_init($p);
+    const {dispatch} = store;
 
-      // сообщяем адаптерам пути, суффиксы и префиксы
-      const {wsql, job_prm, adapters: {pouch}} = $p;
-      pouch.init(wsql, job_prm);
-      reset_cache(pouch);
+    // подключаем metaMiddleware
+    addMiddleware(metaMiddleware($p));
+    addMiddleware(customPouchMiddleware($p));
 
-      // читаем paperjs и deep-diff
-      return $p.load_script('/dist/paperjs-deep-diff.min.js', 'script');
-    })
-    // читаем скрипт рисовалки
-    .then(() => $p.load_script('/dist/windowbuilder.js', 'script'))
+    // сообщяем адаптерам пути, суффиксы и префиксы
+    const {wsql, job_prm, classes, adapters: {pouch}, md} = $p;
+    classes.PouchDB.plugin(proxy_login());
+    pouch.init(wsql, job_prm);
+    reset_cache(pouch);
 
-    // читаем скрипт расчетной части построителя
-    .then(() => $p.load_script('/dist/wnd_debug.js', 'script'))
+    if(job_prm.use_ram === false) {
+      pouch.remote.ram = new classes.PouchDB(pouch.dbpath('ram'), {auto_compaction: true, revs_limit: 3, owner: pouch, fetch: pouch.fetch});
+      pouch.on({
+        on_log_in() {
+          return load_ram($p);
+        },
+      });
+      md.once('predefined_elmnts_inited', () => pouch.emit('pouch_complete_loaded'));
+    }
 
-    // читаем скрипты модификаторов DataObj`s и DataManager`s
-    .then(() => import('./modifiers'))
-    .then((modifiers) => {
+    // читаем paperjs и deep-diff
+    $p.load_script('/dist/paperjs-deep-diff.min.js', 'script')
 
-      // выполняем модификаторы
-      modifiers.default($p);
+      // читаем базовый скрипт рисовалки
+      .then(() => import('windowbuilder/dist/drawer'))
 
-      // информируем хранилище о готовности MetaEngine
-      dispatch(metaActions.META_LOADED($p));
+      .then((module) => {
+        module.default({$p, paper});
+      })
 
-      // читаем локальные данные в ОЗУ
-      const {adapters: {pouch}} = $p;
-      return pouch.load_data()
-        .then(() => pouch.attach_refresher());
+      // читаем дополнительный скрипт рисовалки
+      .then(() => $p.load_script('/dist/windowbuilder.js', 'script'))
 
-    })
-    .catch($p && $p.record_log);
+      // читаем скрипт расчетной части построителя
+      .then(() => $p.load_script('/dist/wnd_debug.js', 'script'))
+
+      // читаем скрипты модификаторов DataObj`s и DataManager`s
+      .then(() => {
+
+        // выполняем модификаторы
+        modifiers($p);
+
+        // информируем хранилище о готовности MetaEngine
+        dispatch(metaActions.META_LOADED($p));
+
+        // читаем локальные данные в ОЗУ
+        return job_prm.use_ram === false ? load_common($p) : pouch.load_data();
+
+      })
+      .catch((err) => {
+        $p.record_log(err);
+      });
+  }
+  catch (err) {
+    $p && $p.record_log(err);
+  }
 }
 
 

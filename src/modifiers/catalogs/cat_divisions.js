@@ -7,7 +7,7 @@
 
 Object.defineProperties($p.cat.divisions, {
   get_option_list: {
-    value: function (selection, val) {
+    value(selection, val) {
       const list = [];
       $p.current_user.acl_objs.find_rows({type: "cat.divisions"}, ({acl_obj}) => {
         if(acl_obj && list.indexOf(acl_obj) == -1){
@@ -38,6 +38,7 @@ Object.defineProperties($p.cat.divisions, {
         return 0;
       })
       return Promise.resolve(l);
-    }
+    },
+    writable: true
   }
 });

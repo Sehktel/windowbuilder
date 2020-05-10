@@ -5,44 +5,25 @@ import {Switch, Route} from 'react-router';
 import Snack from 'metadata-react/App/Snack';       // сообщения в верхней части страницы (например, обновить после первого запуска)
 import Alert from 'metadata-react/App/Alert';       // диалог сообщения пользователю
 import Confirm from 'metadata-react/App/Confirm';   // диалог вопросов пользователю (да, нет)
-import FrmLogin from 'metadata-react/FrmLogin';     // логин и свойства подключения
+import Login, {FrmLogin} from 'metadata-react/FrmLogin/Proxy';  // логин и свойства подключения
 import NeedAuth from 'metadata-react/App/NeedAuth'; // страница "необхлдима авторизация"
 import Header from 'metadata-react/Header';         // навигация
 import DumbScreen from '../DumbScreen';             // заставка "загрузка занных"
-import DataRoute from '../DataRoute';               // вложенный маршрутизатор страниц с данными
+import DataRoute from './DataRoute';                // вложенный маршрутизатор страниц с данными
 import AboutPage from '../About';                   // информация о программе
+import HelpPage from '../Help';                     // руководство пользователя
 import Settings from '../Settings';                 // настройки
 import NotFoundPage from '../NotFoundPage';         // 404
-import MetaTreePage from '../MetaTreePage';         // дерево метаданных
+import {lazy} from './lazy';                        // конструкторы для контекста
 
 import {withNavigateAndMeta} from 'metadata-redux';
 import Builder from '../Builder';
-import CalcOrderList from '../CalcOrderList';
 
-import items, {item_props} from './menu_items';                   // массив элементов меню
+let CalcOrderList = DumbScreen;
+
+import items, {item_props} from './menu_items';     // массив элементов меню
 
 class AppRoot extends Component {
-
-  static propTypes = {
-    handleNavigate: PropTypes.func.isRequired,
-    handleLogin: PropTypes.func.isRequired,
-    handleIfaceState: PropTypes.func.isRequired,
-    first_run: PropTypes.bool.isRequired,
-    snack: PropTypes.object,
-  };
-
-  shouldComponentUpdate(props) {
-    const {meta_loaded, user, offline} = props;
-    let res = true;
-
-    // если есть сохранённый пароль и online, пытаемся авторизоваться
-    if(meta_loaded && !user.logged_in && user.has_login && !user.try_log_in && !offline) {
-      props.handleLogin();
-      res = false;
-    }
-
-    return res;
-  }
 
   handleDialogClose(name) {
     this.props.handleIfaceState({component: '', name, value: {open: false}});
@@ -59,28 +40,64 @@ class AppRoot extends Component {
     }
   }
 
+  componentDidMount() {
+    $p.ui.dialogs.init({handleIfaceState: this.props.handleIfaceState, lazy});
+    let comp;
+    if($p.wsql.get_user_param('ram_indexer')) {
+      comp = import('../CalcOrder/List/CalcOrderList.js');
+      if(items[0].id === 'orders') {
+        const orders = items.splice(0, 1);
+        items[0].items.unshift({
+          text: 'Расчеты-заказы',
+          navigate: '/',
+          need_meta: true,
+          need_user: true,
+          icon: orders.icon,
+        });
+      }
+    }
+    else {
+     comp = import('../CalcOrder/List/CalcOrderListDhtmlx');
+    }
+    comp.then((module) => {
+      CalcOrderList = module.default;
+    });
+  }
+
   render() {
     const {props} = this;
-    const {snack, alert, confirm, meta_loaded, doc_ram_loaded, nom_prices_step, page, user, couch_direct, offline, title} = props;
+    const {snack, alert, confirm, meta_loaded, doc_ram_loaded, nom_prices_step, page, user, couch_direct, offline, title, idle} = props;
     const iprops = item_props();
 
+
     let need_auth = meta_loaded && iprops.need_user && ((!user.try_log_in && !user.logged_in) || (couch_direct && offline));
-    if(need_auth && !couch_direct && $p.current_user && $p.current_user.name == user.name) {
-      need_auth = false;
+    if(need_auth && !couch_direct && props.complete_loaded) {
+      const {current_user} = $p;
+      if(current_user && current_user.name == user.name) {
+        need_auth = false;
+      }
     }
+
+    const auth_props = {
+      key: 'auth',
+      handleNavigate: props.handleNavigate,
+      handleIfaceState: props.handleIfaceState,
+      offline: couch_direct && offline,
+      user,
+      title,
+      idle,
+      disable: ['google'],
+    };
 
     return [
 
       <Header key="header" items={items} {...props} />,
 
       // основной контент или заставка загрузки или приглашение к авторизации
-      need_auth ?
+      need_auth || idle ?
         <NeedAuth
-          key="auth"
-          handleNavigate={props.handleNavigate}
-          handleIfaceState={props.handleIfaceState}
-          title={title}
-          offline={couch_direct && offline}
+          {...auth_props}
+          ComponentLogin={FrmLogin}
         />
         :
         (
@@ -88,7 +105,8 @@ class AppRoot extends Component {
             <DumbScreen
               key="dumb"
               title={doc_ram_loaded ? 'Подготовка данных в памяти...' : 'Загрузка из IndexedDB...'}
-              page={{text: doc_ram_loaded ? `Цены и характеристики${nom_prices_step ? ` (такт №${nom_prices_step})` : ''}...` : `${(page && page.synonym) || 'Почти готово'}...`}}
+              page={{text: doc_ram_loaded ? `Цены и характеристики${nom_prices_step ? ` (такт №${nom_prices_step})` : ''}...` :
+                  `${(page && page.synonym) || 'Почти готово'}...`}}
               top={92}/>
             :
             <Switch key="switch">
@@ -96,9 +114,10 @@ class AppRoot extends Component {
               <Route path="/builder/:ref([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})" component={Builder} />
               <Route path="/:area(doc|cat|ireg|cch|rep).:name" component={DataRoute} />
               <Route path="/about" component={AboutPage} />
-              <Route path="/meta" component={MetaTreePage} />
-              <Route path="/login" component={FrmLogin} />
+              <Route path="/help" component={HelpPage} />
+              <Route path="/login" component={(tprops) => <Login {...tprops} {...auth_props} />} />
               <Route path="/settings" component={Settings} />
+              <Route path="/waiting" component={(tprops) => <DumbScreen {...tprops} repl={props.repl} />} />
               <Route component={NotFoundPage} />
             </Switch>
         ),
@@ -112,13 +131,13 @@ class AppRoot extends Component {
       />,
 
       // диалог сообщений пользователю
-      alert && alert.open && <Alert key="alert" open text={alert.text} title={alert.title} handleOk={this.handleDialogClose.bind(this, 'alert')}/>,
+      alert && alert.open && <Alert key="alert" {...alert} handleOk={this.handleDialogClose.bind(this, 'alert')}/>,
 
       // диалог вопросов пользователю (да, нет)
-      confirm && confirm.open && <Confirm key="confirm" open text={confirm.text} title={confirm.title} handleOk={confirm.handleOk} handleCancel={confirm.handleCancel}/>,
+      confirm && confirm.open && <Confirm key="confirm" {...confirm}/>,
 
       // обрыв связи
-      couch_direct && user.logged_in && !offline && props.complete_loaded && !props.sync_started &&
+      couch_direct && user.logged_in && !offline && props.complete_loaded && !props.sync_started && $p.job_prm.use_ram !== false &&
       <Snack
         key="break"
         snack={{
@@ -135,7 +154,38 @@ class AppRoot extends Component {
 
     ];
   }
+
+  getChildContext() {
+    return {components: lazy};
+  }
 }
+
+AppRoot.childContextTypes = {
+  components: PropTypes.object,
+};
+
+AppRoot.propTypes = {
+  handleNavigate: PropTypes.func.isRequired,
+  handleLogin: PropTypes.func.isRequired,
+  handleIfaceState: PropTypes.func.isRequired,
+  first_run: PropTypes.bool,
+  meta_loaded: PropTypes.bool,
+  doc_ram_loaded: PropTypes.bool,
+  couch_direct: PropTypes.bool,
+  complete_loaded: PropTypes.bool,
+  sync_started: PropTypes.bool,
+  idle: PropTypes.bool,
+  offline: PropTypes.bool,
+  path_log_in: PropTypes.bool,
+  snack: PropTypes.object,
+  alert: PropTypes.object,
+  confirm: PropTypes.object,
+  repl: PropTypes.object,
+  user: PropTypes.object,
+  page: PropTypes.object,
+  nom_prices_step: PropTypes.number,
+  title: PropTypes.string,
+};
 
 export default withNavigateAndMeta(AppRoot);
 

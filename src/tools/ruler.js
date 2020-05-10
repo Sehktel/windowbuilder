@@ -16,26 +16,37 @@ class RulerWnd {
 
   constructor(options, tool) {
 
+    const init = {
+      name: 'sizes',
+      wnd: {
+        caption: 'Размеры и сдвиг',
+        width: 290,
+        height: 320,
+        modal: true,
+      },
+    };
+
     if (!options) {
-      options = {
-        name: 'sizes',
-        wnd: {
-          caption: 'Размеры и сдвиг',
-          height: 200,
-          modal: true,
-        },
-      };
+      options = Object.assign({}, init);
     }
     options.wnd.allow_close = true;
     $p.wsql.restore_options('editor', options);
     if (options.mode > 2) {
       options.mode = 2;
     }
+    if(tool instanceof ToolRuler) {
+      if(options.wnd.width < init.wnd.width) {
+        options.wnd.width = init.wnd.width;
+      }
+      if(options.wnd.height < init.wnd.height) {
+        options.wnd.height = init.wnd.height;
+      }
+    }
     options.wnd.on_close = this.on_close.bind(this);
     this.options = options;
 
     this.tool = tool;
-    const wnd = this.wnd = $p.iface.dat_blank(paper._dxw, options.wnd);
+    const wnd = this.wnd = $p.iface.dat_blank((tool._scope || tool.project._scope)._dxw, options.wnd);
 
     this.on_keydown = this.on_keydown.bind(this);
     this.on_button_click = this.on_button_click.bind(this);
@@ -61,8 +72,6 @@ class RulerWnd {
     $p.iface.add_button(this.table[2].childNodes[1], null,
       {name: 'bottom', css: 'tb_align_vert', tooltip: $p.msg.align_set_bottom}).onclick = this.on_button_click;
 
-    wnd.attachObject(div);
-
     if (tool instanceof ToolRuler) {
 
       div.style.marginTop = '22px';
@@ -77,6 +86,7 @@ class RulerWnd {
           {name: '0', img: 'ruler_elm.png', tooltip: $p.msg.ruler_elm, float: 'left'},
           {name: '1', img: 'ruler_node.png', tooltip: $p.msg.ruler_node, float: 'left'},
           {name: '2', img: 'ruler_arrow.png', tooltip: $p.msg.ruler_new_line, float: 'left'},
+          {name: '4', css: 'tb_cursor-arc-r', tooltip: $p.msg.ruler_arc, float: 'left'},
 
           {name: 'sep_0', text: '', float: 'left'},
           {name: 'base', img: 'ruler_base.png', tooltip: $p.msg.ruler_base, float: 'left'},
@@ -85,10 +95,10 @@ class RulerWnd {
         ],
         image_path: '/imgs/',
         onclick: (name) => {
+          const names = ['0', '1', '2', '4'];
+          if (names.indexOf(name) != -1) {
 
-          if (['0', '1', '2'].indexOf(name) != -1) {
-
-            ['0', '1', '2'].forEach((btn) => {
+            names.forEach((btn) => {
               if (btn != name) {
                 wnd.tb_mode.buttons[btn] && wnd.tb_mode.buttons[btn].classList.remove('muted');
               }
@@ -116,12 +126,38 @@ class RulerWnd {
       wnd.tb_mode.buttons[tool.mode].classList.add('muted');
       wnd.tb_mode.buttons[tool.base_line].classList.add('muted');
       wnd.tb_mode.cell.style.backgroundColor = '#f5f5f5';
+
+      // создаём экземпляр обработки
+      this.dp = $p.dp.builder_size.create();
+      this.dp.align = $p.enm.text_aligns.center;
+
+      this.layout = wnd.attachLayout({
+        pattern: '2E',
+        cells: [
+          {id: 'a', text: 'Размер', header: false, height: 120, fix_size: [null, true]},
+          {id: 'b', text: 'Свойства', header: false},
+        ],
+        offsets: {top: 0, right: 0, bottom: 0, left: 0}
+      });
+      this.layout.cells('a').cell.lastChild.style.border = 'none';
+      this.layout.cells('a').attachObject(div);
+      this.grid = this.layout.cells('b').attachHeadFields({
+        obj: this.dp,
+        read_only: true,
+        oxml: {
+          ' ': ['fix_angle', 'angle', 'align', 'offset', 'hide_c1', 'hide_c2', 'hide_line']
+        },
+        widths: '60,40',
+      });
+    }
+    else {
+      wnd.attachObject(div);
     }
 
     this.input = this.table[1].childNodes[1];
     this.input.grid = {
-      editStop: (v) => {
-        tool.eve.emit('sizes_wnd', {
+      editStop: () => {
+        tool.sizes_wnd({
           wnd: wnd,
           name: 'size_change',
           size: this.size,
@@ -137,14 +173,16 @@ class RulerWnd {
         return [offsetLeft + 7, offsetTop + 9];
       },
     };
-    this.input.firstChild.onfocus = function () {
-      wnd.elmnts.calck = new eXcell_calck(this);
-      wnd.elmnts.calck.edit();
+    this.input.firstChild.onclick = function () {
+      if(!wnd.elmnts.calck) {
+        wnd.elmnts.calck = new eXcell_calck(this);
+      }
+      setTimeout(() => {
+        wnd.elmnts.calck.edit();
+      }, 100);
     };
 
-    setTimeout(() => {
-      this.input && this.input.firstChild.focus();
-    }, 100);
+    this.input.firstChild.click();
 
   }
 
@@ -152,19 +190,21 @@ class RulerWnd {
 
     const {wnd, tool, size} = this;
 
-    if (!paper.project.selectedItems.some((path) => {
-        if (path.parent instanceof DimensionLineCustom) {
+    if (!tool.project.selectedItems.some((path) => {
+        if (path.parent instanceof $p.EditorInvisible.DimensionLineCustom) {
 
           switch (ev.currentTarget.name) {
 
             case 'left':
             case 'bottom':
               path.parent.offset -= 20;
+              this.dp.offset = path.parent.offset;
               break;
 
             case 'top':
             case 'right':
               path.parent.offset += 20;
+              this.dp.offset = path.parent.offset;
               break;
 
           }
@@ -172,13 +212,7 @@ class RulerWnd {
           return true;
         }
       })) {
-
-      tool.eve.emit('sizes_wnd', {
-        wnd: wnd,
-        name: ev.currentTarget.name,
-        size: size,
-        tool: tool,
-      });
+      tool.sizes_wnd({wnd, size, tool, name: ev.currentTarget.name});
     }
   }
 
@@ -219,8 +253,8 @@ class RulerWnd {
             return;
           }
 
-          paper.project.selectedItems.some((path) => {
-            if (path.parent instanceof DimensionLineCustom) {
+          tool.project.selectedItems.some((path) => {
+            if (path.parent instanceof $p.EditorInvisible.DimensionLineCustom) {
               path.parent.remove();
               return true;
             }
@@ -229,7 +263,6 @@ class RulerWnd {
           // Prevent the key event from bubbling
           return $p.iface.cancel_bubble(ev);
 
-          break;
       }
       return $p.iface.cancel_bubble(ev);
     }
@@ -246,7 +279,7 @@ class RulerWnd {
 
     tool.eve.off('keydown', this.on_keydown);
 
-    tool.eve.emit('sizes_wnd', {
+    tool.sizes_wnd({
       wnd: wnd,
       name: 'close',
       size: size,
@@ -254,13 +287,13 @@ class RulerWnd {
     });
 
     if (this.options) {
-      if (tool instanceof DimensionLine) {
+      if (tool instanceof $p.EditorInvisible.DimensionLine) {
         delete this.options.wnd.on_close;
         wnd.wnd_options(this.options.wnd);
         $p.wsql.save_options('editor', this.options);
       }
       else {
-        setTimeout(() => paper.tools[1].activate());
+        setTimeout(() => tool._scope && tool._scope.tools[1].activate());
       }
       delete this.options;
     }
@@ -286,7 +319,32 @@ class RulerWnd {
   set size(v) {
     this.input.firstChild.value = parseFloat(v).round(1);
   }
+
+  attach(line) {
+    if(line.selected) {
+      this.dp.angle = line.angle;
+      this.dp.fix_angle = line.fix_angle;
+      this.dp.align = line.align;
+      this.dp.offset = line.offset;
+      this.dp.hide_c1 = line.hide_c1;
+      this.dp.hide_c2 = line.hide_c2;
+      this.dp.hide_line = line.hide_line;
+      this.dp.value_change = function(f, mf, v) {
+        line[f] = v;
+      };
+    }
+    else {
+      delete this.dp.value_change;
+      this.dp.angle = 0;
+      this.dp.fix_angle = false;
+      this.dp.align = $p.enm.text_aligns.center;
+      this.dp.offset = 0;
+    }
+    this.grid.setEditable(line.selected);
+  }
 }
+
+$p.EditorInvisible.RulerWnd = RulerWnd;
 
 
 /**
@@ -330,18 +388,18 @@ class ToolRuler extends ToolElement {
 
     this.on({
 
-      activate: function () {
+      activate () {
 
         this.selected.a.length = 0;
         this.selected.b.length = 0;
 
         this.on_activate('cursor-arrow-ruler-light');
 
-        paper.project.deselectAll();
+        this.project.deselectAll();
         this.wnd = new RulerWnd(this.options, this);
       },
 
-      deactivate: function () {
+      deactivate () {
 
         this.remove_path();
 
@@ -349,7 +407,7 @@ class ToolRuler extends ToolElement {
 
       },
 
-      mousedown: function (event) {
+      mousedown (event) {
 
         if (this.hitItem) {
 
@@ -384,6 +442,30 @@ class ToolRuler extends ToolElement {
             this.add_hit_point(event);
 
           }
+          // mode == 4 - это радиус элемента
+          else if (this.mode == 4 && this.hitPoint) {
+
+            const {parent} = this.hitItem.item;
+
+            if(parent.is_linear()) {
+              $p.msg.show_msg({
+                type: 'alert-info',
+                text: `Выделен прямой элемент`,
+                title: 'Размерная линия радиуса'
+              });
+            }
+            else {
+              // создаём размерную линию
+              new $p.EditorInvisible.DimensionRadius({
+                elm1: parent,
+                p1: this.hitItem.item.getOffsetOf(this.hitPoint).round(),
+                parent: parent.layer.l_dimensions,
+                by_curve: event.modifiers.control || event.modifiers.shift || window.event.ctrlKey || window.event.shiftKey,
+              });
+              this.project.register_change(true);
+            }
+
+          }
           // mode > 1 - это размерная линия
           else {
 
@@ -408,7 +490,7 @@ class ToolRuler extends ToolElement {
               else {
 
                 // создаём размерную линию
-                new DimensionLineCustom({
+                new $p.EditorInvisible.DimensionLineCustom({
                   elm1: this.selected.a[0].profile,
                   elm2: this.hitPoint.profile,
                   p1: this.selected.a[0].point_name,
@@ -416,7 +498,7 @@ class ToolRuler extends ToolElement {
                   parent: this.hitPoint.profile.layer.l_dimensions,
                 });
 
-                this.hitPoint.profile.project.register_change(true);
+                this.project.register_change(true);
                 this.reset_selected();
 
               }
@@ -431,22 +513,21 @@ class ToolRuler extends ToolElement {
 
       },
 
-      mouseup: function (event) {
-
-
-      },
-
-      mousedrag: function (event) {
+      mouseup () {
 
       },
 
-      mousemove: function (event) {
+      mousedrag () {
+
+      },
+
+      mousemove (event) {
 
         this.hitTest(event);
 
         const {mode, path} = this;
 
-        if (mode == 3 && path) {
+        if (mode === 3 && path) {
 
           if (path.segments.length == 4) {
             path.removeSegments(1, 3, true);
@@ -477,10 +558,23 @@ class ToolRuler extends ToolElement {
             this.path_text.visible = false;
           }
         }
+        else if(mode === 4 && this.hitPoint) {
+          if (!this.path) {
+            this.path = new paper.Path.Circle({
+              center: this.hitPoint,
+              radius: 20,
+              fillColor: new paper.Color(0, 0, 1, 0.5),
+              guide: true,
+            });
+          }
+          else {
+            this.path.position = this.hitPoint;
+          }
+        }
 
       },
 
-      keydown: function (event) {
+      keydown (event) {
 
         // удаление размерной линии
         if (event.key == '-' || event.key == 'delete' || event.key == 'backspace') {
@@ -488,8 +582,8 @@ class ToolRuler extends ToolElement {
           if (event.event && event.event.target && ['textarea', 'input'].indexOf(event.event.target.tagName.toLowerCase()) != -1)
             return;
 
-          paper.project.selectedItems.some((path) => {
-            if (path.parent instanceof DimensionLineCustom) {
+          this.project.selectedItems.some((path) => {
+            if (path.parent instanceof $p.EditorInvisible.DimensionLineCustom) {
               path.parent.remove();
               return true;
             }
@@ -503,8 +597,6 @@ class ToolRuler extends ToolElement {
       },
     });
 
-    this._sizes_wnd = this._sizes_wnd.bind(this);
-    this.eve.on('sizes_wnd', this._sizes_wnd);
   }
 
   hitTest(event) {
@@ -516,29 +608,40 @@ class ToolRuler extends ToolElement {
 
       // если режим - расстояние между элементами, ловим профили, а точнее - заливку путей
       if (!this.mode) {
-        this.hitItem = paper.project.hitTest(event.point, {fill: true, tolerance: 10});
+        this.hitItem = this.project.hitTest(event.point, {fill: true, tolerance: 10});
+      }
+      if (this.mode === 4) {
+        this.hitItem = this.project.hitTest(event.point, {stroke: true, tolerance: 20});
       }
       else {
         // Hit test points
-        const hit = paper.project.hitPoints(event.point, 16);
-        if (hit && hit.item.parent instanceof ProfileItem) {
+        const hit = this.project.hitPoints(event.point, 16, false, true);
+        if (hit && hit.item.parent instanceof $p.EditorInvisible.ProfileItem) {
           this.hitItem = hit;
         }
       }
     }
 
-    if (this.hitItem && this.hitItem.item.parent instanceof ProfileItem) {
+    if (this.hitItem && this.hitItem.item.parent instanceof $p.EditorInvisible.ProfileItem) {
       if (this.mode) {
-        paper.canvas_cursor('cursor-arrow-white-point');
-        this.hitPoint = this.hitItem.item.parent.select_corn(event.point);
+        this._scope.canvas_cursor('cursor-arrow-white-point');
+        if (this.mode === 4) {
+          this.hitPoint = this.hitItem.item.getNearestPoint(event.point);
+        }
+        else {
+          this.hitPoint = this.hitItem.item.parent.select_corn(event.point);
+        }
       }
     }
     else {
       if (this.mode) {
-        paper.canvas_cursor('cursor-text-select');
+        this._scope.canvas_cursor('cursor-text-select');
+        if (this.mode === 4) {
+          this.remove_path();
+        }
       }
       else {
-        paper.canvas_cursor('cursor-arrow-ruler-light');
+        this._scope.canvas_cursor('cursor-arrow-ruler-light');
       }
       this.hitItem = null;
     }
@@ -563,7 +666,7 @@ class ToolRuler extends ToolElement {
   reset_selected() {
 
     this.remove_path();
-    paper.project.deselectAll();
+    this.project.deselectAll();
     this.selected.a.length = 0;
     this.selected.b.length = 0;
     if (this.mode > 2) {
@@ -606,7 +709,7 @@ class ToolRuler extends ToolElement {
 
     }
     else {
-      paper.project.deselectAll();
+      this.project.deselectAll();
       this.selected.a.length = 0;
       this.selected.b.length = 0;
       this.selected.a.push(item);
@@ -622,7 +725,7 @@ class ToolRuler extends ToolElement {
   }
 
   set mode(v) {
-    paper.project.deselectAll();
+    this.project.deselectAll();
     this.options.mode = parseInt(v);
   }
 
@@ -646,17 +749,21 @@ class ToolRuler extends ToolElement {
     }, 0) / (this.selected.b.length);
     let delta = Math.abs(pos2 - pos1);
 
-    if (xy == 'x') {
-      if (event.name == 'right')
+    if(xy == 'x') {
+      if(event.name == 'right') {
         delta = new paper.Point(event.size - delta, 0);
-      else
+      }
+      else {
         delta = new paper.Point(delta - event.size, 0);
-
-    } else {
-      if (event.name == 'bottom')
+      }
+    }
+    else {
+      if(event.name == 'bottom') {
         delta = new paper.Point(0, event.size - delta);
-      else
+      }
+      else {
         delta = new paper.Point(0, delta - event.size);
+      }
     }
 
     if (delta.length) {
@@ -665,11 +772,12 @@ class ToolRuler extends ToolElement {
 
       // TODO: запомнить ruler_line и восстановить после перемещения
 
-      paper.project.deselectAll();
+      this.project.deselectAll();
 
-      if (event.name == 'right' || event.name == 'bottom') {
+      if(event.name == 'right' || event.name == 'bottom') {
         to_move = pos1 < pos2 ? this.selected.b : this.selected.a;
-      } else {
+      }
+      else {
         to_move = pos1 < pos2 ? this.selected.a : this.selected.b;
       }
 
@@ -677,19 +785,17 @@ class ToolRuler extends ToolElement {
         p.generatrix.segments.forEach((segm) => segm.selected = true);
       });
 
-      paper.project.move_points(delta);
+      this.project.move_points(delta);
 
       setTimeout(() => {
-        paper.project.deselectAll();
-        // this.selected.a.forEach((p) => p.path.selected = true);
-        // this.selected.b.forEach((p) => p.path.selected = true);
-        paper.project.register_update();
+        this.project.deselectAll();
+        this.project.register_update();
       }, 200);
     }
 
   }
 
-  _sizes_wnd(event) {
+  sizes_wnd(event) {
 
     if (this.wnd && event.wnd == this.wnd.wnd) {
 
@@ -716,5 +822,7 @@ class ToolRuler extends ToolElement {
   }
 
 }
+
+$p.EditorInvisible.ToolRuler = ToolRuler;
 
 

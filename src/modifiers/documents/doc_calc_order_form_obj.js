@@ -39,10 +39,10 @@
         }
 
         if(user.role_available('СогласованиеРасчетовЗаказов') || user.role_available('РедактированиеЦен') || user.role_available('РедактированиеСкидок')) {
-          source.types = 'cntr,ref,ref,txt,ro,calck,calck,calck,calck,ref,calck,calck,ro,calck,calck,ro';
+          source.types = 'cntr,ref,ref,txt,ro,ro,ro,ro,calck,ref,calck,calck,ro,calck,calck,ro';
         }
         else {
-          source.types = 'cntr,ref,ref,txt,ro,calck,calck,calck,calck,ref,ro,calck,ro,calck,calck,ro';
+          source.types = 'cntr,ref,ref,txt,ro,ro,ro,ro,calck,ref,ro,calck,ro,calck,calck,ro';
         }
 
         _meta_patched = true;
@@ -56,12 +56,14 @@
        * получим задействованные в заказе объекты характеристик
        */
       const refs = [];
-      o.production.each((row) => {
+      o.production.forEach((row) => {
         if(!$p.utils.is_empty_guid(row._obj.characteristic) && row.characteristic.is_new()) {
           refs.push(row._obj.characteristic);
         }
       });
-      $p.cat.characteristics.adapter.load_array($p.cat.characteristics, refs)
+      const {cat: {characteristics}, enm: {obj_delivery_states}} = $p;
+      characteristics.adapter.load_array(characteristics, refs, false,
+          o.obj_delivery_state == obj_delivery_states.Шаблон && characteristics.adapter.local.templates)
         .then(() => {
 
           const footer = {
@@ -69,7 +71,7 @@
             _in_header_stat_s: function(tag,index,data){
               const calck=function(){
                 let sum=0;
-                o.production.each((row) => {
+                o.production.forEach((row) => {
                   sum += row.s * row.quantity;
                 });
                 return sum.toFixed(2);
@@ -151,17 +153,32 @@
         pwnd: wnd,
         read_only: wnd.elmnts.ro,
         oxml: {
-          ' ': [{id: 'number_doc', path: 'o.number_doc', synonym: 'Номер', type: 'ro'},
+          ' ': [
+            {id: 'number_doc', path: 'o.number_doc', synonym: 'Номер', type: 'ro'},
             {id: 'date', path: 'o.date', synonym: 'Дата', type: 'ro', txt: moment(o.date).format(moment._masks.date_time)},
             'number_internal'
           ],
-          'Контактная информация': ['partner', 'client_of_dealer', 'phone',
+          'Контактная информация': [
+            'partner',
+            {id: 'client_of_dealer', path: 'o.client_of_dealer', synonym: 'Клиент дилера', type: 'client'},
+            'phone',
             {id: 'shipping_address', path: 'o.shipping_address', synonym: 'Адрес доставки', type: 'addr'}
           ],
-          'Дополнительные реквизиты': ['obj_delivery_state', 'category',
-            {id: 'manager', path: 'o.manager', synonym: 'Автор', type: 'ro'}, 'leading_manager']
+          'Дополнительные реквизиты': [
+            'obj_delivery_state',
+            'category',
+            {id: 'manager', path: 'o.manager', synonym: 'Автор', type: 'ro'},
+            'leading_manager'
+          ]
         }
       });
+      wnd.elmnts.pg_left.xcell_action = function (component, fld) {
+        $p.dp.buyers_order.open_component(wnd, {
+          ref: o.ref,
+          cmd: fld,
+          _mgr: _mgr,
+        }, handlers, component);
+      }
 
       /**
        *  правая колонка шапки документа
@@ -187,7 +204,7 @@
             {id: 'department', path: 'o.department', synonym: 'Офис продаж', type: 'refc'},
             {id: 'warehouse', path: 'o.warehouse', synonym: 'Склад отгрузки', type: 'refc'},
           ],
-          'Итоги': [{id: 'doc_currency', path: 'o.doc_currency', synonym: 'Валюта документа', type: 'ro', txt: o['doc_currency'].presentation},
+          'Итоги': [{id: 'doc_currency', path: 'o.doc_currency', synonym: 'Валюта документа', type: 'ro', txt: o['doc_currency'].toString()},
             {id: 'doc_amount', path: 'o.doc_amount', synonym: 'Сумма', type: 'ron', txt: o['doc_amount']},
             {id: 'amount_internal', path: 'o.amount_internal', synonym: 'Сумма внутр', type: 'ron', txt: o['amount_internal']}]
         }
@@ -199,7 +216,7 @@
       wnd.elmnts.cell_note = wnd.elmnts.layout_header.cells('c');
       wnd.elmnts.cell_note.hideHeader();
       wnd.elmnts.cell_note.setHeight(100);
-      wnd.elmnts.cell_note.attachHTMLString('<textarea placeholder=\'Комментарий к заказу\' class=\'textarea_editor\'>' + o.note + '</textarea>');
+      wnd.elmnts.cell_note.attachHTMLString(`<textarea placeholder='Комментарий к заказу' class='textarea_editor'>${o.note}</textarea>`);
 
     };
 
@@ -221,7 +238,14 @@
             wnd.handleIfaceState = handlers.handleIfaceState;
           }
 
-          o.load_production()
+          (o._data._reload ? o.load() : Promise.resolve())
+            .then(() => {
+              if(o._data._reload) {
+                delete o._data._reload;
+                _mgr.emit_async('rows', o, {'production': true});
+              }
+              return o.load_production();
+            })
             .then(() => {
               rsvg_reload();
               o._manager.on('svgs', rsvg_reload);
@@ -233,6 +257,9 @@
                   rsvg_click(search.ref, 0);
                 }, 200);
               };
+            })
+            .catch(() => {
+              delete o._data._reload;
             });
 
           return res;
@@ -321,6 +348,10 @@
         save('retrieve');
         break;
 
+      case 'btn_reload':
+        reload();
+        break;
+
       case 'btn_post':
         save('post');
         break;
@@ -346,11 +377,24 @@
         break;
 
       case 'btn_add_product':
-        $p.dp.buyers_order.open_product_list(wnd, o);
+        //$p.dp.buyers_order.open_product_list(wnd, o);
+        $p.dp.buyers_order.open_component(wnd, o, handlers, 'AdditionsExt');
         break;
 
       case 'btn_additions':
-        $p.dp.buyers_order.open_additions(wnd, o, handlers);
+        $p.dp.buyers_order.open_component(wnd, o, handlers, 'Additions');
+        break;
+
+      case 'btn_jalousie':
+        open_jalousie(true);
+        break;
+
+      case 'cut_evaluation':
+        cut_evaluation();
+        break;
+
+      case 'btn_share':
+        $p.dp.buyers_order.open_component(wnd, {ref: o.ref, cmd: btn_id}, handlers, 'PushUtils');
         break;
 
       case 'btn_add_material':
@@ -359,6 +403,18 @@
 
       case 'btn_edit':
         open_builder();
+        break;
+
+      case 'btn_recalc_row':
+        recalc('row');
+        break;
+
+      case 'btn_recalc_doc':
+        recalc('doc');
+        break;
+
+      case 'btn_change_recalc':
+        change_recalc();
         break;
 
       case 'btn_spec':
@@ -415,7 +471,12 @@
           text: 'Документ изменён.<br />Перед созданием копии сохраните заказ'
         });
       };
-      handlers.handleNavigate(`/login`);
+      handlers.handleIfaceState({
+        component: '',
+        name: 'repl',
+        value: {root: {title: 'Длительная операция', text: 'Копирование и пересчет заказа'}},
+      });
+      handlers.handleNavigate(`/waiting`);
       _manager.clone(o)
         .then((doc) => {
           handlers.handleNavigate(`/${_manager.class_name}/${doc.ref}`);
@@ -521,7 +582,21 @@
       });
     }
 
+    function reload() {
+      o && o.load()
+        .then(() => o.load_production(true))
+        .then(() => {
+          const {pg_left, pg_right, grids} = wnd.elmnts;
+          pg_left.reload();
+          pg_right.reload();
+          grids.production.selection = grids.production.selection;
+          wnd.set_text();
+        });
+    }
+
     function save(action) {
+
+      const {msg, enm} = $p;
 
       function do_save(post) {
 
@@ -531,7 +606,7 @@
         }
 
         o.save(post)
-          .then(function () {
+          .then(() => {
             if(action == 'sent' || action == 'close') {
               close();
             }
@@ -539,22 +614,40 @@
               wnd.set_text();
               set_editable(o, wnd);
             }
-
           })
-          .catch($p.record_log);
+          .catch((err) => {
+            if(err._rev) {
+              // показать диалог и обработать возврат
+              dhtmlx.confirm({
+                title: o.presentation,
+                text: err.message + '<div style="text-align: left;padding-top: 16px;">Ваши правки потеряны, можно закрыть форму либо прочитать актуальную версию заказа с сервера</div>',
+                cancel: 'Прочитать',
+                callback: (btn) => {
+                  btn === false && reload();
+                }
+              });
+            }
+            else {
+              msg.show_msg({
+                type: 'alert-warning',
+                text: err.message || err,
+                title: o.presentation
+              });
+            }
+          });
       }
 
       switch (action) {
       case 'sent':
         // показать диалог и обработать возврат
         dhtmlx.confirm({
-          title: $p.msg.order_sent_title,
-          text: $p.msg.order_sent_message,
-          cancel: $p.msg.cancel,
+          title: msg.order_sent_title,
+          text: msg.order_sent_message,
+          cancel: msg.cancel,
           callback: function (btn) {
             if(btn) {
               // установить транспорт в "отправлено" и записать
-              o.obj_delivery_state = $p.enm.obj_delivery_states.Отправлен;
+              o.obj_delivery_state = enm.obj_delivery_states.Отправлен;
               do_save();
             }
           }
@@ -563,7 +656,7 @@
 
       case 'retrieve':
         // установить транспорт в "отозвано" и записать
-        o.obj_delivery_state = $p.enm.obj_delivery_states.Отозван;
+        o.obj_delivery_state = enm.obj_delivery_states.Отозван;
         do_save();
         break;
 
@@ -582,14 +675,10 @@
 
     function frm_close() {
 
-      if(o && o._modified) {
-        if(o.is_new()) {
-          o.unload();
-        }
-        else if(!location.pathname.match(/builder/)) {
-          setTimeout(o.load.bind(o), 100);
-        }
-      }
+      // if(o && !location.pathname.match(/builder/)) {
+      //   // при закрыти формы не в рисовалку, выгружаем заказ и его продукции из памяти
+      //   setTimeout(o.unload.bind(o), 200);
+      // }
 
       // выгружаем из памяти всплывающие окна скидки и связанных файлов
       ['vault', 'vault_pop', 'discount', 'svgs', 'layout_header'].forEach((elm) => {
@@ -608,9 +697,10 @@
       pg_right.cells('vat_included', 1).setDisabled(true);
 
       const ro = wnd.elmnts.ro = o.is_read_only;
+      const {enm: {obj_delivery_states: {Отправлен, Отклонен, Шаблон}}, current_user} = $p;
 
       const retrieve_enabed = !o._deleted &&
-        (o.obj_delivery_state == $p.enm.obj_delivery_states.Отправлен || o.obj_delivery_state == $p.enm.obj_delivery_states.Отклонен);
+        (o.obj_delivery_state == Отправлен || o.obj_delivery_state == Отклонен);
 
       grids.production.setEditable(!ro);
       grids.planning.setEditable(!ro);
@@ -618,13 +708,13 @@
       pg_right.setEditable(!ro);
 
       // гасим кнопки проведения, если недоступна роль
-      if(!$p.current_user.role_available('СогласованиеРасчетовЗаказов')) {
+      if(!current_user.role_available('СогласованиеРасчетовЗаказов')) {
         frm_toolbar.hideItem('btn_post');
         frm_toolbar.hideItem('btn_unpost');
       }
 
       // если не технологи и не менеджер - запрещаем менять статусы
-      if(!$p.current_user.role_available('ИзменениеТехнологическойНСИ') && !$p.current_user.role_available('СогласованиеРасчетовЗаказов')) {
+      if(!current_user.role_available('ИзменениеТехнологическойНСИ') && !current_user.role_available('СогласованиеРасчетовЗаказов')) {
         pg_left.cells('obj_delivery_state', 1).setDisabled(true);
       }
 
@@ -642,7 +732,7 @@
       }
       else {
         // шаблоны никогда не надо отправлять
-        if(o.obj_delivery_state == $p.enm.obj_delivery_states.Шаблон) {
+        if(o.obj_delivery_state == Шаблон) {
           frm_toolbar.disableItem('btn_sent');
         }
         else {
@@ -669,11 +759,76 @@
      * показывает диалог с сообщением "это не продукция"
      */
     function not_production() {
-      $p.msg.show_msg({
-        title: $p.msg.bld_title,
+      const {msg} = $p;
+      msg.show_msg({
+        title: msg.bld_title,
         type: 'alert-error',
-        text: $p.msg.bld_not_product
+        text: msg.bld_not_product
       });
+    }
+
+    /**
+     * Пересчитывает строку или весь заказ
+     * @param [mode] {String} - если 'row' - пересчет строки
+     */
+    function recalc(mode) {
+      if(mode == 'row') {
+        const selId = production_get_sel_index();
+        if(selId == undefined) {
+          return not_production();
+        }
+        const row = o.production.get(selId);
+        if(row) {
+          const {owner, calc_order} = row.characteristic;
+          let ox;
+          if(row.characteristic.empty() || calc_order.empty() || owner.is_procedure || owner.is_accessory) {
+            return not_production();
+          }
+          else if(row.characteristic.coordinates.count() == 0) {
+            // возможно, это подчиненная продукция
+            if(row.characteristic.leading_product.calc_order == calc_order) {
+              ox = row.characteristic.leading_product;
+            }
+          }
+          else {
+            ox = row.characteristic;
+          }
+          if(ox) {
+            wnd.progressOn();
+            ox.recalc()
+              .catch((err) => {
+                $p.msg.show_msg({
+                  title: $p.msg.bld_title,
+                  type: 'alert-error',
+                  text: err.stack || err.message
+                });
+              })
+              .then(() => wnd.progressOff());
+          }
+        }
+      }
+      else {
+        wnd.progressOn();
+        o.recalc({save: true})
+          .catch((err) => {
+            $p.msg.show_msg({
+              title: $p.msg.bld_title,
+              type: 'alert-error',
+              text: err.stack || err.message
+            });
+          })
+          .then(() => {
+            wnd.progressOff();
+            wnd.set_text();
+          });
+      }
+    }
+
+    /**
+     * Открывает диалог пересчета со сменой системы и прочих параметров
+     */
+    function change_recalc() {
+      $p.dp.buyers_order.open_component(wnd, {ref: o.ref, _mgr}, handlers, 'ChangeRecalc');
     }
 
     /**
@@ -681,7 +836,6 @@
      * @param [create_new] {Boolean} - создавать новое изделие или открывать в текущей строке
      */
     function open_builder(create_new) {
-      var selId;
 
       if(create_new == 'clone') {
         const selId = production_get_sel_index();
@@ -698,10 +852,20 @@
             else if(row.characteristic.coordinates.count()) {
               // добавляем строку
               o.create_product_row({grid: wnd.elmnts.grids.production, create: true})
-                .then(({characteristic}) => {
+                .then((nrow) => {
+                  const {characteristic} = nrow;
+                  nrow.quantity = row.quantity;
+                  nrow.note = row.note;
                   // заполняем продукцию копией данных текущей строки
                   characteristic._mixin(row.characteristic._obj, null,
-                    'ref,name,calc_order,product,leading_product,leading_elm,origin,note,partner'.split(','), true);
+                    'ref,name,calc_order,product,leading_product,leading_elm,origin,partner'.split(','), true);
+
+                  // при необходимости, установим признак необходимости перезаполнить параметры изделия и фурнитуры
+                  if(calc_order.refill_props) {
+                    characteristic._data.refill_props = true;
+                  }
+
+                  // открываем рисовалку
                   handlers.handleNavigate(`/builder/${characteristic.ref}`);
                 });
             }
@@ -724,24 +888,57 @@
           const row = o.production.get(selId);
           if(row) {
             const {owner, calc_order} = row.characteristic;
+            // если стоим на строке жалюзи, открываем конструктор жалюзи
+            if(owner === $p.job_prm.nom.foroom) {
+              return open_jalousie();
+            }
             if(row.characteristic.empty() || calc_order.empty() || owner.is_procedure || owner.is_accessory) {
               not_production();
             }
             else if(row.characteristic.coordinates.count() == 0) {
               // возможно, это заготовка - проверим номенклатуру системы
               if(row.characteristic.leading_product.calc_order == calc_order) {
-                //$p.iface.set_hash("cat.characteristics", row.characteristic.leading_product.ref, "builder");
                 handlers.handleNavigate(`/builder/${row.characteristic.leading_product.ref}`);
               }
             }
             else {
-              //$p.iface.set_hash("cat.characteristics", row.characteristic.ref, "builder");
               handlers.handleNavigate(`/builder/${row.characteristic.ref}`);
             }
           }
         }
       }
 
+    }
+
+    function cut_evaluation() {
+      $p.dp.buyers_order.open_component(wnd, {ref: o.ref, _mgr}, handlers, 'CutEvaluation');
+    }
+
+    function open_jalousie(create_new) {
+      const {dp, job_prm: {nom}} = $p;
+      if(create_new) {
+        return o.create_product_row({grid: wnd.elmnts.grids.production, create: true})
+          .then((row) => {
+            row.nom = nom.foroom;
+            row.characteristic.owner = row.nom;
+            row.unit = row.nom.storage_unit;
+            dp.buyers_order.open_component(wnd, {ref: o.ref, cmd: row, _mgr}, handlers, 'Jalousie');
+          });
+      }
+      else {
+        const selId = production_get_sel_index();
+        if(selId != undefined) {
+          const row = o.production.get(selId);
+          const {owner} = row.characteristic;
+          // если стоим на строке жалюзи, открываем конструктор жалюзи
+          if(owner === nom.foroom) {
+            row.nom = nom.foroom;
+            row.unit = row.nom.storage_unit;
+            return dp.buyers_order.open_component(wnd, {ref: o.ref, cmd: row, _mgr}, handlers, 'Jalousie');
+          }
+        }
+        not_production();
+      }
     }
 
     /**

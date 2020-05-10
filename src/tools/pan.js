@@ -21,9 +21,7 @@
 class ToolPan extends ToolElement {
 
   constructor() {
-
-    super()
-
+    super();
     Object.assign(this, {
       options: {name: 'pan'},
       distanceThreshold: 10,
@@ -31,47 +29,49 @@ class ToolPan extends ToolElement {
       mouseStartPos: new paper.Point(),
       mode: 'pan',
       zoomFactor: 1.1,
-    })
+    });
 
     this.on({
 
-      activate: function() {
+      activate() {
         this.on_activate('cursor-hand');
       },
 
-      deactivate: function() {
+      deactivate() {
       },
 
-      mousedown: function(event) {
+      mousedown(event) {
         if (event.modifiers.shift) {
           this.mouseStartPos = event.point;
         }
         else{
-          this.mouseStartPos = event.point.subtract(paper.view.center);
+          this.mouseStartPos = event.point.subtract(this._scope.view.center);
         }
         this.mode = '';
         if (event.modifiers.control || event.modifiers.option) {
           this.mode = 'zoom';
         }
         else {
-          paper.canvas_cursor('cursor-hand-grab');
+          this._scope.canvas_cursor('cursor-hand-grab');
           this.mode = 'pan';
         }
       },
 
-      mouseup: function(event) {
+      mouseup(event) {
         const {view} = this._scope;
-        if (this.mode == 'zoom') {
+        if(this.mode == 'zoom') {
           const zoomCenter = event.point.subtract(view.center);
           const moveFactor = this.zoomFactor - 1.0;
-          if (event.modifiers.control) {
+          if(event.modifiers.control) {
             view.zoom *= this.zoomFactor;
             view.center = view.center.add(zoomCenter.multiply(moveFactor / this.zoomFactor));
-          } else if (event.modifiers.option) {
+          }
+          else if(event.modifiers.option) {
             view.zoom /= this.zoomFactor;
             view.center = view.center.subtract(zoomCenter.multiply(moveFactor));
           }
-        } else if (this.mode == 'zoom-rect') {
+        }
+        else if(this.mode == 'zoom-rect') {
           const start = view.center.add(this.mouseStartPos);
           const end = event.point;
           view.center = start.add(end).multiply(0.5);
@@ -83,7 +83,7 @@ class ToolPan extends ToolElement {
         this.mode = '';
       },
 
-      mousedrag: function(event) {
+      mousedrag(event) {
         const {view} = this._scope;
         if (this.mode == 'zoom') {
           // If dragging mouse while in zoom mode, switch to zoom-rect instead.
@@ -110,11 +110,9 @@ class ToolPan extends ToolElement {
         }
       },
 
-      mousemove: function(event) {
-        this.hitTest(event);
-      },
+      mousemove: this.hitTest,
 
-      keydown: function(event) {
+      keydown(event) {
         const rootLayer = this._scope.project.rootLayer();
         switch (event.key) {
           case 'left':
@@ -132,28 +130,28 @@ class ToolPan extends ToolElement {
         }
       },
 
-      keyup: function(event) {
+      keyup(event) {
         this.hitTest(event);
       }
-    })
-
+    });
   }
 
   testHot(type, event, mode) {
-    var spacePressed = event && event.modifiers.space;
-    if (mode != 'tool-zoompan' && !spacePressed)
+    const spacePressed = event && event.modifiers.space;
+    if(mode != 'tool-zoompan' && !spacePressed) {
       return false;
+    }
     return this.hitTest(event);
   }
 
   hitTest(event) {
 
     if (event.modifiers.control) {
-      paper.canvas_cursor('cursor-zoom-in');
+      this._scope.canvas_cursor('cursor-zoom-in');
     } else if (event.modifiers.option) {
-      paper.canvas_cursor('cursor-zoom-out');
+      this._scope.canvas_cursor('cursor-zoom-out');
     } else {
-      paper.canvas_cursor('cursor-hand');
+      this._scope.canvas_cursor('cursor-hand');
     }
 
     return true;

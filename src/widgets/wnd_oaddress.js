@@ -15,7 +15,9 @@ class WndAddressData {
     this.city = "";
     this.street =	"";
     this.postal_code = "";
-    this.marker = {};
+    this.marker = null;
+    this.poly_area = null;
+    this.poly_direction = null;
     this.flat = "";
 
     this._house = "";
@@ -42,8 +44,382 @@ class WndAddressData {
   }
 
   get coordinates() {
-    const {coordinates} = this.owner.obj;
-    return coordinates ? JSON.parse(coordinates) : []
+    const {latitude, longitude, owner: {obj}} = this;
+    const {coordinates} = obj;
+    return coordinates ? JSON.parse(coordinates) : (latitude && longitude ? [latitude, longitude] : []);
+  }
+
+  init_map(map, position) {
+    const {maps} = window.google || {};
+    if(maps) {
+      this.marker = new maps.Marker({
+        map,
+        draggable: true,
+        animation: maps.Animation.DROP,
+        position
+      });
+      this.poly_area = new maps.Polygon(
+        {
+          map,
+          strokeColor     : '#80aa80',
+          strokeOpacity   : 0.4,
+          strokeWeight    : 2,
+          fillColor       : "#c0d0e0",
+          fillOpacity     : 0.3,
+          geodesic        : true
+        });
+      this.poly_direction = new maps.Polygon(
+        {
+          map,
+          strokeColor     : '#aa80ff',
+          strokeOpacity   : 0.4,
+          strokeWeight    : 1,
+          fillColor       : "#ccaaff",
+          fillOpacity     : 0.2,
+          geodesic        : true
+        });
+      this.refresh_coordinates();
+      this._marker_toggle_bounce = maps.event.addListener(this.marker, 'click', this.marker_toggle_bounce.bind(this));
+      this._marker_dragend = maps.event.addListener(this.marker, 'dragend', this.marker_dragend.bind(this));
+    }
+  }
+
+  ulisten() {
+    const {maps} = window.google || {};
+    if(maps) {
+      maps.event.removeListener(this._marker_toggle_bounce);
+      maps.event.removeListener(this._marker_dragend);
+    }
+  }
+
+  /**
+   * Сворачивает все поля адреса в строку
+   * @return {string}
+   */
+  assemble_addr(with_flat){
+    const {country, region, city, street, postal_code, house, flat} = this;
+    const res = (region && region !== city ? (region + ', ') : '') +
+      (city ? (city + ', ') : '') +
+      (street ? (street.replace(/,/g, ' ') + ', ') : '') +
+      (house ? (house + ', ') : '') +
+      (with_flat && flat ? (flat + ', ') : '');
+    return res.endsWith(', ') ? res.substr(0, res.length - 2) : res;
+  }
+
+  /**
+   * Устанавливает поля адреса в документе
+   */
+  assemble_address_fields(without_flat){
+
+    const {fias} = WndAddressData;
+    const {obj} = this.owner;
+    const v = this;
+
+    obj.shipping_address = this.assemble_addr(!without_flat);
+
+    let fields = '<КонтактнаяИнформация  \
+				xmlns="http://www.v8.1c.ru/ssl/contactinfo" \
+				xmlns:xs="http://www.w3.org/2001/XMLSchema" \
+				xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"   \
+				Представление="%1">   \
+					<Комментарий/>  \
+					<Состав xsi:type="Адрес" Страна="РОССИЯ">   \
+						<Состав xsi:type="АдресРФ">'.replace('%1', obj.shipping_address);
+
+    if(v.region){
+      fields += '\n<СубъектРФ>' + v.region + '</СубъектРФ>';
+    }
+
+    if(v.city){
+      if(v.city.indexOf('г.') != -1 || v.city.indexOf('г ') != -1 || v.city.indexOf(' г') != -1)
+        fields += '\n<Город>' + v.city + '</Город>';
+      else
+        fields += '\n<НаселПункт>' + v.city + '</НаселПункт>';
+    }
+
+    if(v.street){
+      fields += '\n<Улица>' + (v.street.replace(/,/g," ")) + '</Улица>';
+    }
+
+    let suffix, index, house_type, flat_type;
+
+    let house = v.house;
+    if(house){
+      // отделяем улицу от дома, корпуса и квартиры
+      for(let i in fias){
+        if(fias[i].type == 1){
+          for(let syn of fias[i].syn){
+            if((index = house.indexOf(syn.trimLeft())) != -1){
+              house_type = i;
+              house = house.substr(index + syn.trimLeft().length).trim();
+              break;
+            }
+          }
+          if(house_type)
+            break;
+        }
+      }
+      if(!house_type){
+        house_type = "1010";
+        if((index = house.indexOf(" ")) != -1){
+          house = house.substr(index);
+        }
+      }
+      fields += '\n<ДопАдрЭл><Номер Тип="' + house_type +  '" Значение="' + house.trim() + '"/></ДопАдрЭл>';
+    }
+
+    // квартира и тип квартиры (офиса)
+    let flat = v.flat;
+    if(flat){
+      for(let i in fias){
+        if(fias[i].type == 3){
+          for(let syn of fias[i].syn){
+            if((index = flat.indexOf(syn)) != -1){
+              flat_type = i;
+              flat = flat.substr(index + syn.length);
+              break;
+            }
+          }
+          if(flat_type)
+            break;
+        }
+      }
+      if(!flat_type){
+        flat_type = "2010";
+        if((index = flat.indexOf(" ")) != -1){
+          flat = flat.substr(index);
+        }
+      }
+      fields += '\n<ДопАдрЭл><Номер Тип="' + flat_type +  '" Значение="' + flat.trim() + '"/></ДопАдрЭл>';
+    }
+
+    if(v.postal_code)
+      fields += '<ДопАдрЭл ТипАдрЭл="10100000" Значение="' + v.postal_code + '"/>';
+
+    fields += '</Состав> \
+					</Состав></КонтактнаяИнформация>';
+
+    obj.address_fields = fields;
+  }
+
+  /**
+   * обновляет текст координат и полигоны
+   * @param [wnd]
+   * @param [latitude]
+   * @param [longitude]
+   */
+  refresh_coordinates(latitude, longitude){
+    const v = this;
+    const {wnd} = this.owner;
+    if(latitude && longitude) {
+      v.latitude = latitude;
+      v.longitude = longitude;
+    }
+    // если форма уже существует
+    if(wnd && wnd.elmnts && wnd.elmnts.map) {
+      v.latitude && wnd.elmnts.toolbar.setValue('coordinates', `${v.latitude.toFixed(8)} ${v.longitude.toFixed(8)}`);
+      // перерисовывает полигоны
+      const {delivery_area, poly_area, poly_direction} = v;
+      const {LatLng} = google.maps;
+      for(const poly of [poly_area, poly_direction]) {
+        poly.getPath().clear();
+      }
+      if(delivery_area.coordinates.count() > 2) {
+        poly_area.setPath(delivery_area.coordinates._obj.map((v) => new LatLng(v.latitude, v.longitude)));
+      }
+      $p.cat.delivery_directions.forEach(({composition, coordinates}) => {
+        if(composition.find({elm: delivery_area})) {
+          poly_direction.setPath(coordinates._obj.map((v) => new LatLng(v.latitude, v.longitude)));
+          return false;
+        }
+      });
+    }
+  }
+
+  /**
+   * Заполняет структуру адреса v по данным полей адреса документа
+   * @return {Promise.<TResult>}
+   */
+  process_address_fields(){
+
+    const v = this;
+    const {obj} = this.owner;
+    const {ipinfo, msg} = $p;
+    const {fias} = WndAddressData;
+
+
+    if(obj.address_fields){
+      v.xml = ( new DOMParser() ).parseFromString(obj.address_fields, "text/xml");
+      let tmp = {}, res = {}, tattr,
+        nss = "СубъектРФ,Округ,СвРайМО,СвРайМО,ВнутригРайон,НаселПункт,Улица,Город,ДопАдрЭл,Адрес_по_документу,Местоположение".split(",");
+
+      function get_aatributes(ca){
+        if(ca.attributes && ca.attributes.length == 2){
+          return {[ca.attributes[0].value]: ca.attributes[1].value};
+        }
+      }
+
+      for(let i in nss){
+        tmp[nss[i]] = v.xml.getElementsByTagName(nss[i]);
+      }
+      for(let i in tmp){
+        for(let j in tmp[i]){
+          if(j == "length" || !tmp[i].hasOwnProperty(j))
+            continue;
+          if(tattr = get_aatributes(tmp[i][j])){
+            if(!res[i])
+              res[i] = [];
+            res[i].push(tattr);
+          }
+          else if(tmp[i][j].childNodes.length){
+            for(let k in tmp[i][j].childNodes){
+              if(k == "length" || !tmp[i][j].childNodes.hasOwnProperty(k))
+                continue;
+              if(tattr = get_aatributes(tmp[i][j].childNodes[k])){
+                if(!res[i])
+                  res[i] = [];
+                res[i].push(tattr);
+              }else if(tmp[i][j].childNodes[k].nodeValue){
+                if(!res[i])
+                  res[i] = tmp[i][j].childNodes[k].nodeValue;
+                else
+                  res[i] += " " + tmp[i][j].childNodes[k].nodeValue;
+              }
+            }
+          }
+        }
+      }
+      for(let i in res["ДопАдрЭл"]){
+        for(let j in fias){
+          if(j.length != 4)
+            continue;
+          if(res["ДопАдрЭл"][i][j])
+            if(fias[j].type == 1){
+              v._house = fias[j].name + " " + res["ДопАдрЭл"][i][j];
+            }
+            else if(fias[j].type == 2){
+              v._housing = fias[j].name + " " + res["ДопАдрЭл"][i][j];
+            }
+            else if(fias[j].type == 3){
+              v.flat = fias[j].name + " " + res["ДопАдрЭл"][i][j];
+            }
+        }
+
+        if(res["ДопАдрЭл"][i]["10100000"])
+          v.postal_code = res["ДопАдрЭл"][i]["10100000"];
+      }
+
+      v.address_fields = res;
+
+      //
+      v.region = res["СубъектРФ"] || res["Округ"] || "";
+      v.city = res["Город"] || res["НаселПункт"] || "";
+      v.street = (res["Улица"] || "");
+    }
+
+    return ipinfo.google_ready()
+      .then(() => {
+
+        // если есть координаты $p.ipinfo, используем их, иначе - Москва
+        if(!v.latitude || !v.longitude){
+          // если координаты есть в Расчете, используем их
+          if(obj.shipping_address && ipinfo.ggeocoder){
+            // если есть строка адреса, пытаемся геокодировать
+            ipinfo.ggeocoder.geocode({address: v.assemble_addr()}, (results, status) => {
+              if (status == google.maps.GeocoderStatus.OK) {
+                const {location} = results[0].geometry;
+                v.refresh_coordinates(location.lat(), location.lng());
+              }
+            });
+          }
+          else if(ipinfo.latitude && ipinfo.longitude ){
+            v.refresh_coordinates(ipinfo.latitude, ipinfo.longitude);
+          }
+          else{
+            v.latitude = 55.635924;
+            v.longitude = 37.6066379;
+            msg.show_msg(msg.empty_geocoding);
+          }
+        }
+      });
+  }
+
+  /**
+   * Parse a string containing a latitude, longitude pair and return them as an object.
+   * @function toLatLng
+   * @param {String} Str
+   * @return {{lat: Number, lng: Number}}
+   */
+  assemble_lat_lng(str) {
+    //simple coordinates
+    const simpleMatches = [];
+    simpleMatches[0] = /^\s*?(-?[0-9]+\.?[0-9]+?)\s*\,\s*(-?[0-9]+\.?[0-9]+?)\s*$/.exec(str);
+    simpleMatches[2] = /^\s*?(-?[0-9]+[,.]?[0-9]+?)\s*;?\s*(-?[0-9]+[,.]?[0-9]+?)\s*$/.exec(str);
+    const simpleMatch = simpleMatches.find(match => match && match.length === 3);
+    //complex coordinates
+    const otherMatches = [];
+    otherMatches[0] = /^\s*([0-9]+)°([0-9]+)'([0-9.,]*)"?\s*[NS]\s*([0-9]+)°([0-9]+)'([0-9.,]*)"?\s*[WE]\s*$/.exec(str);
+    otherMatches[1] = /^\s*[NS]\s*([0-9]+)°([0-9]+)'([0-9.,]*)"?\s*[EW]\s*([0-9]+)°([0-9]+)'([0-9.,]*)"?\s*$/.exec(str);
+    const otherMatch = otherMatches.find(match => match && match.length === 7);
+    if (simpleMatch) {
+      const lat = parseFloat(simpleMatch[1].replace(',', '.'));
+      const lng = parseFloat(simpleMatch[2].replace(',', '.'));
+
+      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        return { lat, lng };
+      }
+
+    } else if (otherMatch) {
+      const latDeg = parseFloat(otherMatch[1]);
+      const latMin = parseFloat(otherMatch[2]);
+      const latSec = parseFloat(otherMatch[3].replace(',', '.'));
+      const lngDeg = parseFloat(otherMatch[4]);
+      const lngMin = parseFloat(otherMatch[5]);
+      const lngSec = parseFloat(otherMatch[6].replace(',', '.'));
+
+      const lat = (latDeg + latMin / 60 + latSec / 3600) * (str.indexOf('S') !== -1 ? -1 : 1);
+      const lng = (lngDeg + lngMin / 60 + lngSec / 3600) * (str.indexOf('W') !== -1 ? -1 : 1);
+
+      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        return { lat, lng };
+      }
+    }
+
+  }
+
+  marker_toggle_bounce() {
+    if (this.marker.getAnimation() != null) {
+      this.marker.setAnimation(null);
+    }
+    else {
+      this.marker.setAnimation(google.maps.Animation.BOUNCE);
+      setTimeout(() => this.marker.setAnimation(null), 1500);
+    }
+  }
+
+  marker_dragend(e) {
+    const {ipinfo} = $p;
+    ipinfo.ggeocoder && ipinfo.ggeocoder.geocode({'latLng': e.latLng}, (results, status) => {
+      if (status == google.maps.GeocoderStatus.OK) {
+        const v = this;
+        const {wnd} = this.owner;
+        if (results[0]) {
+          const addr = results[0];
+          wnd.setText(addr.formatted_address);
+          ipinfo.components(v, addr.address_components);
+          v.refresh_coordinates(e.latLng.lat(), e.latLng.lng());
+
+          this.owner.refresh_grid && this.owner.refresh_grid();
+
+          const zoom = v.street ? 15 : 12;
+          if(wnd.elmnts.map.getZoom() != zoom){
+            wnd.elmnts.map.setZoom(zoom);
+            wnd.elmnts.map.setCenter(e.latLng);
+          }
+
+        }
+      }
+    });
   }
 
 }
@@ -59,7 +435,8 @@ class WndAddress {
     this.grid = source.grid;
     // реквизиты формы
     this.v = new WndAddressData(this);
-    this.process_address_fields().then(() => this.frm_create());
+    this.v.process_address_fields()
+      .then(() => this.frm_create());
   }
 
   /**
@@ -168,29 +545,49 @@ class WndAddress {
     elmnts.toolbar = wnd.attachToolbar({icons_path: dhtmlx.image_path + 'dhxtoolbar' + dhtmlx.skin_suffix()});
     elmnts.toolbar.loadStruct('<toolbar><item id="btn_select" type="button" title="Установить адрес" text="&lt;b&gt;Выбрать&lt;/b&gt;" /><item type="separator"  id="sep1"	/></toolbar>', function(){
 
-      this.attachEvent("onclick", toolbar_click);
+      this.attachEvent('onclick', toolbar_click);
 
       const delivery_area_id = `txt_${dhx4.newId()}`;
       this.addText(delivery_area_id);
-      this.addSeparator("sep2");
-      this.addText("txt_region");
+      this.addSeparator('sep2');
+      this.addText('txt_region');
 
       const txt_div = this.objPull[this.idPrefix + delivery_area_id].obj;
       const delivery_area = new $p.iface.OCombo({
         parent: txt_div,
         obj: obj,
-        field: "delivery_area",
+        field: 'delivery_area',
         width: 200,
         hide_frm: true,
       });
-      txt_div.style.border = "1px solid #ccc";
-      txt_div.style.borderRadius = "3px";
-      txt_div.style.padding = "3px 2px 1px 2px";
-      txt_div.style.margin = "1px 5px 1px 1px";
-      delivery_area.DOMelem_input.placeholder = "Район доставки";
+      txt_div.style.border = '1px solid #ccc';
+      txt_div.style.borderRadius = '3px';
+      txt_div.style.padding = '3px 2px 1px 2px';
+      txt_div.style.margin = '1px 5px 1px 1px';
+      delivery_area.DOMelem_input.placeholder = 'Район доставки';
+
+      this.addInput('coordinates');
+      this.setWidth('coordinates', 210);
+      this.cont.querySelector('.dhxtoolbar_float_left').style.width = '100%';
+      const coordinates = this.getInput('coordinates');
+      coordinates.parentElement.style.float = 'right';
+      coordinates.placeholder = 'Координаты';
 
       this.setItemText('txt_region', v.region);
 
+    });
+
+    elmnts.toolbar.attachEvent("onEnter", (id, value) => {
+      if(id === 'coordinates') {
+        const {v, wnd} = this;
+        const coordinates = v.assemble_lat_lng(value);
+        if(coordinates) {
+          const latLng = new google.maps.LatLng(coordinates.lat, coordinates.lng);
+          wnd.elmnts.map.setCenter(latLng);
+          v.marker.setPosition(latLng);
+          v.marker_dragend({latLng});
+        }
+      }
     });
 
     elmnts.cell_map = elmnts.layout.cells('c');
@@ -207,15 +604,7 @@ class WndAddress {
       mapTypeId: maps.MapTypeId.ROADMAP
     };
     elmnts.map = elmnts.cell_map.attachMap(mapParams);
-
-    v.marker = new maps.Marker({
-      map: elmnts.map,
-      draggable: true,
-      animation: maps.Animation.DROP,
-      position: mapParams.center
-    });
-    this._marker_toggle_bounce = maps.event.addListener(v.marker, 'click', this.marker_toggle_bounce.bind(this));
-    this._marker_dragend = maps.event.addListener(v.marker, 'dragend', this.marker_dragend.bind(this));
+    v.init_map(elmnts.map, mapParams.center);
 
     this.refresh_grid();
   }
@@ -237,7 +626,10 @@ class WndAddress {
   toolbar_click(btn_id){
     if(btn_id=="btn_select"){
       const {obj, v, wnd} = this;
-      this.assemble_address_fields();
+      const {elmnts: {pgrid, pgrid2}} = wnd;
+      pgrid && pgrid.editStop();
+      pgrid2 && pgrid2.editStop();
+      v.assemble_address_fields();
       obj.coordinates = JSON.stringify([v.latitude, v.longitude]);
       wnd.close();
     }
@@ -256,37 +648,40 @@ class WndAddress {
   delivery_area_changed(){
 
     const {v, wnd} = this;
+    const {delivery_area} = v;
 
     // получим город и район из "района доставки"
-    if(!v.delivery_area.empty()){
+    if(!delivery_area.empty()){
       v.street = "";
     }
 
-    if(v.delivery_area.region){
-      v.region = v.delivery_area.region;
+    if(delivery_area.region){
+      v.region = delivery_area.region;
     }
     else {
       v.region = "";
     }
     wnd.elmnts.toolbar.setItemText('txt_region', v.region);
 
-    if(v.delivery_area.city){
-      v.city = v.delivery_area.city;
+    if(delivery_area.city){
+      v.city = delivery_area.city;
       wnd.elmnts.pgrid.cells("city", 1).setValue(v.city);
     }
     else{
       v.city = "";
     }
 
-    if(v.delivery_area.latitude && v.delivery_area.longitude){
-      const LatLng = new google.maps.LatLng(v.delivery_area.latitude, v.delivery_area.longitude);
+    if(delivery_area.latitude && delivery_area.longitude){
+      const LatLng = new google.maps.LatLng(delivery_area.latitude, delivery_area.longitude);
       wnd.elmnts.map.setCenter(LatLng);
       v.marker.setPosition(LatLng);
+      v.refresh_coordinates(delivery_area.latitude, delivery_area.longitude)
     }
 
     this.refresh_grid();
   }
 
+  // перерисовывает табчасть
   refresh_grid(){
     const {pgrid, pgrid2} = this.wnd.elmnts;
     const {region, city, street, house, flat} = this.v;
@@ -304,309 +699,14 @@ class WndAddress {
       wnd.elmnts.map.setZoom(zoom);
     }
 
-    this.do_geocoding((results, status) => {
+    const {ipinfo} = $p;
+    ipinfo.ggeocoder && ipinfo.ggeocoder.geocode({address: v.assemble_addr()}, (results, status) => {
       if (status == google.maps.GeocoderStatus.OK) {
         const loc = results[0].geometry.location;
         wnd.elmnts.map.setCenter(loc);
         v.marker.setPosition(loc);
-        v.latitude = loc.lat();
-        v.longitude = loc.lng();
-        v.postal_code = $p.ipinfo.components({}, results[0].address_components).postal_code || "";
-      }
-    });
-  }
-
-  /**
-   * Сворачивает все поля адреса в строку
-   * @return {string}
-   */
-  assemble_addr(with_flat){
-    const {country, region, city, street, postal_code, house, flat} = this.v;
-    return (street ? (street.replace(/,/g," ") + ", ") : "") +
-      (house ? (house + ", ") : "") +
-      (with_flat && flat ? (flat + ", ") : "") +
-      (city ? (city + ", ") : "") +
-      (region ? (region + ", ") : "") + country +
-      (postal_code ? (", " + postal_code) : "");
-  }
-
-  /**
-   * Устанавливает поля адреса в документе
-   */
-  assemble_address_fields(){
-
-    const {obj, v} = this;
-    const {fias} = WndAddress;
-
-    obj.shipping_address = this.assemble_addr(true);
-
-    let fields = '<КонтактнаяИнформация  \
-				xmlns="http://www.v8.1c.ru/ssl/contactinfo" \
-				xmlns:xs="http://www.w3.org/2001/XMLSchema" \
-				xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"   \
-				Представление="%1">   \
-					<Комментарий/>  \
-					<Состав xsi:type="Адрес" Страна="РОССИЯ">   \
-						<Состав xsi:type="АдресРФ">'.replace('%1', obj.shipping_address);
-
-    if(v.region){
-      fields += '\n<СубъектРФ>' + v.region + '</СубъектРФ>';
-    }
-
-    if(v.city){
-      if(v.city.indexOf('г.') != -1 || v.city.indexOf('г ') != -1 || v.city.indexOf(' г') != -1)
-        fields += '\n<Город>' + v.city + '</Город>';
-      else
-        fields += '\n<НаселПункт>' + v.city + '</НаселПункт>';
-    }
-
-    if(v.street){
-      fields += '\n<Улица>' + (v.street.replace(/,/g," ")) + '</Улица>';
-    }
-
-    let suffix, index, house_type, flat_type;
-
-    let house = v.house;
-    if(house){
-      // отделяем улицу от дома, корпуса и квартиры
-      for(let i in fias){
-        if(fias[i].type == 1){
-          for(let syn of fias[i].syn){
-            if((index = house.indexOf(syn.trimLeft())) != -1){
-              house_type = i;
-              house = house.substr(index + syn.trimLeft().length).trim();
-              break;
-            }
-          }
-          if(house_type)
-            break;
-        }
-      }
-      if(!house_type){
-        house_type = "1010";
-        if((index = house.indexOf(" ")) != -1){
-          house = house.substr(index);
-        }
-      }
-      fields += '\n<ДопАдрЭл><Номер Тип="' + house_type +  '" Значение="' + house.trim() + '"/></ДопАдрЭл>';
-    }
-
-    // квартира и тип квартиры (офиса)
-    let flat = v.flat;
-    if(flat){
-      for(let i in fias){
-        if(fias[i].type == 3){
-          for(let syn of fias[i].syn){
-            if((index = flat.indexOf(syn)) != -1){
-              flat_type = i;
-              flat = flat.substr(index + syn.length);
-              break;
-            }
-          }
-          if(flat_type)
-            break;
-        }
-      }
-      if(!flat_type){
-        flat_type = "2010";
-        if((index = flat.indexOf(" ")) != -1){
-          flat = flat.substr(index);
-        }
-      }
-      fields += '\n<ДопАдрЭл><Номер Тип="' + flat_type +  '" Значение="' + flat.trim() + '"/></ДопАдрЭл>';
-    }
-
-    if(v.postal_code)
-      fields += '<ДопАдрЭл ТипАдрЭл="10100000" Значение="' + v.postal_code + '"/>';
-
-    fields += '</Состав> \
-					</Состав></КонтактнаяИнформация>';
-
-    obj.address_fields = fields;
-  }
-
-  /**
-   * Заполняет структуру адреса v по данным полей адреса документа
-   * @return {Promise.<TResult>}
-   */
-  process_address_fields(){
-
-    const {obj, v} = this;
-    const {fias} = WndAddress;
-
-    if(obj.address_fields){
-      v.xml = ( new DOMParser() ).parseFromString(obj.address_fields, "text/xml");
-      let tmp = {}, res = {}, tattr,
-        nss = "СубъектРФ,Округ,СвРайМО,СвРайМО,ВнутригРайон,НаселПункт,Улица,Город,ДопАдрЭл,Адрес_по_документу,Местоположение".split(",");
-
-      function get_aatributes(ca){
-        if(ca.attributes && ca.attributes.length == 2){
-          return {[ca.attributes[0].value]: ca.attributes[1].value};
-        }
-      }
-
-      for(let i in nss){
-        tmp[nss[i]] = v.xml.getElementsByTagName(nss[i]);
-      }
-      for(let i in tmp){
-        for(let j in tmp[i]){
-          if(j == "length" || !tmp[i].hasOwnProperty(j))
-            continue;
-          if(tattr = get_aatributes(tmp[i][j])){
-            if(!res[i])
-              res[i] = [];
-            res[i].push(tattr);
-          }
-          else if(tmp[i][j].childNodes.length){
-            for(let k in tmp[i][j].childNodes){
-              if(k == "length" || !tmp[i][j].childNodes.hasOwnProperty(k))
-                continue;
-              if(tattr = get_aatributes(tmp[i][j].childNodes[k])){
-                if(!res[i])
-                  res[i] = [];
-                res[i].push(tattr);
-              }else if(tmp[i][j].childNodes[k].nodeValue){
-                if(!res[i])
-                  res[i] = tmp[i][j].childNodes[k].nodeValue;
-                else
-                  res[i] += " " + tmp[i][j].childNodes[k].nodeValue;
-              }
-            }
-          }
-        }
-      }
-      for(let i in res["ДопАдрЭл"]){
-        for(let j in fias){
-          if(j.length != 4)
-            continue;
-          if(res["ДопАдрЭл"][i][j])
-            if(fias[j].type == 1){
-              v._house = fias[j].name + " " + res["ДопАдрЭл"][i][j];
-            }
-            else if(fias[j].type == 2){
-              v._housing = fias[j].name + " " + res["ДопАдрЭл"][i][j];
-            }
-            else if(fias[j].type == 3){
-              v.flat = fias[j].name + " " + res["ДопАдрЭл"][i][j];
-            }
-        }
-
-        if(res["ДопАдрЭл"][i]["10100000"])
-          v.postal_code = res["ДопАдрЭл"][i]["10100000"];
-      }
-
-      v.address_fields = res;
-
-      //
-      v.region = res["СубъектРФ"] || res["Округ"] || "";
-      v.city = res["Город"] || res["НаселПункт"] || "";
-      v.street = (res["Улица"] || "");
-    }
-
-    return new Promise(function(resolve, reject){
-
-      if(!$p.ipinfo)
-        $p.ipinfo = new IPInfo();
-
-      if(window.google && window.google.maps){
-        return resolve();
-      }
-
-      $p.load_script("https://maps.google.com/maps/api/js?key=" + $p.job_prm.use_google_geo + "&callback=$p.ipinfo.location_callback", "script", function(){});
-
-      let google_ready = $p.eve.attachEvent("geo_google_ready", () => {
-
-        if(watch_dog)
-          clearTimeout(watch_dog);
-
-        if(google_ready){
-          $p.eve.detachEvent(google_ready);
-          google_ready = null;
-          resolve();
-        }
-      });
-
-      // Если Google не ответил - информируем об ошибке и продолжаем
-      let watch_dog = setTimeout(() => {
-
-        if(google_ready){
-          $p.eve.detachEvent(google_ready);
-          google_ready = null;
-        }
-        $p.msg.show_msg({
-          type: "alert-warning",
-          text: $p.msg.error_geocoding + " Google",
-          title: $p.msg.main_title
-        });
-
-        reject();
-
-      }, 10000);
-
-
-    })
-      .then(() => {
-
-        // если есть координаты $p.ipinfo, используем их, иначе - Москва
-        if(!v.latitude || !v.longitude){
-          // если координаты есть в Расчете, используем их
-          if(obj.shipping_address){
-            // если есть строка адреса, пытаемся геокодировать
-            this.do_geocoding((results, status) => {
-              if (status == google.maps.GeocoderStatus.OK) {
-                v.latitude = results[0].geometry.location.lat();
-                v.longitude = results[0].geometry.location.lng();
-              }
-            });
-          }
-          else if($p.ipinfo.latitude && $p.ipinfo.longitude ){
-            v.latitude = $p.ipinfo.latitude;
-            v.longitude = $p.ipinfo.longitude;
-          }
-          else{
-            v.latitude = 55.635924;
-            v.longitude = 37.6066379;
-            $p.msg.show_msg($p.msg.empty_geocoding);
-          }
-        }
-      });
-  }
-
-  do_geocoding(call){
-    $p.ipinfo.ggeocoder.geocode({address: this.assemble_addr()}, call);
-  }
-
-  marker_toggle_bounce() {
-    const {v} = this;
-    if (v.marker.getAnimation() != null) {
-      v.marker.setAnimation(null);
-    }
-    else {
-      v.marker.setAnimation(google.maps.Animation.BOUNCE);
-      setTimeout(() => v.marker.setAnimation(null), 1500);
-    }
-  }
-
-  marker_dragend(e) {
-    $p.ipinfo.ggeocoder.geocode({'latLng': e.latLng}, (results, status) => {
-      if (status == google.maps.GeocoderStatus.OK) {
-        const {v, wnd} = this;
-        if (results[0]) {
-          const addr = results[0];
-          wnd.setText(addr.formatted_address);
-          $p.ipinfo.components(v, addr.address_components);
-
-          this.refresh_grid();
-
-          const zoom = v.street ? 15 : 12;
-          if(wnd.elmnts.map.getZoom() != zoom){
-            wnd.elmnts.map.setZoom(zoom);
-            wnd.elmnts.map.setCenter(e.latLng);
-          }
-
-          v.latitude = e.latLng.lat();
-          v.longitude = e.latLng.lng();
-        }
+        v.postal_code = ipinfo.components({}, results[0].address_components).postal_code || "";
+        v.refresh_coordinates(loc.lat(), loc.lng());
       }
     });
   }
@@ -633,12 +733,10 @@ class WndAddress {
   }
 
   frm_close(win){
-    const {grid, obj, listener} = this;
+    const {grid, obj, listener, v} = this;
     grid && grid.editStop();
     obj && obj._manager.off('update', listener);
-    const {event} = google.maps;
-    event.removeListener(this._marker_toggle_bounce);
-    event.removeListener(this._marker_dragend);
+    v.ulisten();
     return !win.error;
   }
 
@@ -647,7 +745,7 @@ class WndAddress {
 /**
  *  строки ФИАС адресного классификатора
  */
-WndAddress.fias = {
+WndAddressData.fias = {
   types: ["владение", "здание", "помещение"],
 
   // Код, Наименование, Тип, Порядок, КодФИАС
@@ -679,6 +777,12 @@ WndAddress.fias = {
 }
 
 /**
+ * Конструктор структуры адреса
+ * @type {WndAddressData}
+ */
+$p.classes.WndAddressData = WndAddressData;
+
+/**
  *  Конструктор поля ввода адреса
  */
 class eXcell_addr extends eXcell {
@@ -703,20 +807,41 @@ class eXcell_addr extends eXcell {
   }
 
   ti_keydown(e) {
-    if(e.keyCode === 8 || e.keyCode === 46){          // по {del} и {bs} очищаем значение
+    const {code, ctrlKey} = e;
+    if(e.code === 'Backspace' || e.code === 'Delete'){          // по {del} и {bs} очищаем значение
       const {obj} = this.grid.get_cell_field();
       obj.shipping_address = '';
       obj.address_fields = '';
       this.grid.editStop();
       return $p.iface.cancel_bubble(e);
     }
+    // по {F4} открываем форму списка
+    else if(code === 'F4' || code === 'F2' || (ctrlKey && code === 'KeyF')) {
+      return this.open_selection(e);
+    }
+
     return eXcell_ocombo.prototype.input_keydown(e, this);
   }
 
   open_selection(e) {
-    const source = {grid: this.grid}._mixin(this.grid.get_cell_field());
-    new WndAddress(source);
-    return $p.iface.cancel_bubble(e);
+    const v = this.grid.get_cell_field();
+    const {iface, job_prm: {builder}, enm: {geo_map_kind}} = $p;
+
+    if(v && v.field) {
+      switch(builder.geo_map) {
+      case undefined:
+      case 'dhtmlx_google':
+        new WndAddress({grid: this.grid}._mixin(v));
+        break;
+      case 'react_google':
+      case 'react_google_without_area':
+      case 'react_yandex':
+      case 'react_yandex_without_area':
+        this.grid.xcell_action && this.grid.xcell_action('DeliveryAddr', v.field);
+      }
+    }
+
+    return iface.cancel_bubble(e);
   }
 
 

@@ -16,16 +16,16 @@
  * @extends paper.Tool
  * @constructor
  */
-class ToolElement extends paper.Tool {
+class ToolElement extends $p.EditorInvisible.ToolElement {
 
-  resetHot(type, event, mode) {
-
+  constructor() {
+    super();
+    this.on_close = this.on_close.bind(this);
   }
 
-  testHot(type, event, mode) {
-    /*	if (mode != 'tool-select')
-     return false;*/
-    return this.hitTest(event)
+  on_activate(cursor) {
+    super.on_activate(cursor);
+    this._scope.tb_left.select(this.options.name);
   }
 
   /**
@@ -45,6 +45,9 @@ class ToolElement extends paper.Tool {
       }
 
       if (this.wnd.wnd_options) {
+        if(!this.options.wnd){
+          this.options.wnd = {};
+        }
         this.wnd.wnd_options(this.options.wnd);
         $p.wsql.save_options("editor", this.options);
         this.wnd.close();
@@ -55,60 +58,9 @@ class ToolElement extends paper.Tool {
     this.profile = null;
   }
 
-  /**
-   * ### Проверяет, есть ли в проекте стои, при необходимости добавляет
-   * @method detache_wnd
-   * @for ToolElement
-   */
-  check_layer() {
-    const {_scope} = this;
-    if (!_scope.project.contours.length) {
-      // создаём пустой новый слой
-      new Contour({parent: undefined});
-      // оповещаем мир о новых слоях
-      _scope.eve.emit_async('rows', _scope.project.ox, {constructions: true});
-    }
-  }
-
-  /**
-   * ### Общие действия при активизации инструмента
-   *
-   * @method on_activate
-   * @for ToolElement
-   */
-  on_activate(cursor) {
-
-    this._scope.tb_left.select(this.options.name);
-
-    this._scope.canvas_cursor(cursor);
-
-    // для всех инструментов, кроме select_node...
-    if (this.options.name != "select_node") {
-
-      this.check_layer();
-
-      // проверяем заполненность системы
-      if (this._scope.project._dp.sys.empty()) {
-        $p.msg.show_msg({
-          type: "alert-warning",
-          text: $p.msg.bld_not_sys,
-          title: $p.msg.bld_title
-        });
-      }
-    }
-  }
-
   on_close(wnd) {
-    wnd && wnd.cell && setTimeout(() => paper.tools[1].activate());
+    wnd && wnd.cell && setTimeout(() => this._scope.tools[1].activate());
     return true;
-  }
-
-  get eve() {
-    return this._scope.eve;
-  }
-
-  get project() {
-    return this._scope.project;
   }
 
 }

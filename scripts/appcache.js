@@ -13,6 +13,18 @@ const fs = require('fs-extra');
 const glob = require('glob');
 
 const paths = require('../config/paths');
+const packageData = require('../package.json');
+const moment = require('moment');
+const build = `{"build": "v${packageData.version} (${packageData.dependencies['metadata-core']}), ${moment().format()}"}`;
+fs.writeFile(path.resolve(paths.appBuild + '/build.json').replace(/\\/g, '/'), build, 'utf8', function (err) {
+  if(err) {
+    console.log(err);
+    process.exit(1);
+  }
+  else {
+    console.log('Write build.json...');
+  }
+});
 
 
 let appcache = `CACHE MANIFEST
@@ -22,11 +34,12 @@ let appcache = `CACHE MANIFEST
 CACHE:
 
 ./
-https://fonts.googleapis.com/css?family=Roboto`;
+https://cdn.jsdelivr.net/jszip/2/jszip.min.js
+https://cdn.jsdelivr.net/combine/gh/open-xml-templating/docxtemplater-build@3.1.5/build/docxtemplater-latest.min.js,gh/open-xml-templating/docxtemplater-image-module-build@3.0.2/build/docxtemplater-image-module-latest.min.js`;
 
 glob('./build/**/*', function(err, files) {
   for(const name of files){
-    if(name.match(/\.(js|json|html|css|png|ico|jpg|gif|woff2)$/)){
+    if(name.match(/\.(js|json|html|css|scss|png|ico|jpg|gif|woff|woff2|ttf)$/) && !name.match(/\/(ram|templates)\//)){
       appcache += `\n${name.replace('./build', '')}`;
     }
   };
@@ -41,13 +54,13 @@ https://*
 `;
   // записываем результат
   fs.writeFile(path.resolve(paths.appBuild + '/cache.appcache').replace(/\\/g, '/'), appcache, 'utf8', function (err) {
-    if (err) {
-      console.log(err)
-      process.exit(1)
+    if(err) {
+      console.log(err);
+      process.exit(1);
     }
     else {
-      console.log('Write appcache...')
-      process.exit(0)
+      console.log('Write appcache...');
+      process.exit(0);
     }
   });
 });
