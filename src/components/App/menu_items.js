@@ -1,23 +1,23 @@
 import React from 'react';
 
-import IconInbox from 'material-ui-icons/Inbox';
-//import IconList from 'material-ui-icons/List';
-import IconHelp from 'material-ui-icons/Help';
-import IconInfo from 'material-ui-icons/Info';
-import IconPerson from 'material-ui-icons/Person';
-import IconSettings from 'material-ui-icons/Settings';
-import IconBusinessCenter from 'material-ui-icons/BusinessCenter';
-import IconReceipt from 'material-ui-icons/Receipt';
+import IconInbox from '@material-ui/icons/Inbox';
+//import IconList from '@material-ui/icons/List';
+import IconHelp from '@material-ui/icons/Help';
+import IconInfo from '@material-ui/icons/Info';
+import IconPerson from '@material-ui/icons/Person';
+import IconSettings from '@material-ui/icons/Settings';
+import IconBusinessCenter from '@material-ui/icons/BusinessCenter';
+import IconReceipt from '@material-ui/icons/Receipt';
 
-import IconDrafts from 'material-ui-icons/Edit';
-import IconSend from 'material-ui-icons/Send';
-import IconConfitmed from 'material-ui-icons/ThumbUp';
-import IconDeclined from 'material-ui-icons/ThumbDown';
-import IconService from 'material-ui-icons/Build';
-import IconComplaints from 'material-ui-icons/BugReport';
-import IconPuzzle from 'material-ui-icons/Extension';
-import IconFileDownload from 'material-ui-icons/FileDownload';
-import IconFileShuffle from 'material-ui-icons/Shuffle';
+import IconDrafts from '@material-ui/icons/Edit';
+import IconSend from '@material-ui/icons/Send';
+import IconConfitmed from '@material-ui/icons/ThumbUp';
+import IconDeclined from '@material-ui/icons/ThumbDown';
+import IconService from '@material-ui/icons/Build';
+import IconComplaints from '@material-ui/icons/BugReport';
+import IconPuzzle from '@material-ui/icons/Extension';
+import IconFileDownload from '@material-ui/icons/CloudDownload';
+import IconFileShuffle from '@material-ui/icons/Shuffle';
 
 const items = [
   {
@@ -133,18 +133,18 @@ const items = [
         need_meta: true,
         need_user: true,
       },
-      {
-        text: 'Банк приход',
-        navigate: '/doc.debit_bank_order/list',
-        need_meta: true,
-        need_user: true,
-      },
-      {
-        text: 'Банк расход',
-        navigate: '/doc.credit_bank_order/list',
-        need_meta: true,
-        need_user: true,
-      },
+      // {
+      //   text: 'Банк приход',
+      //   navigate: '/doc.debit_bank_order/list',
+      //   need_meta: true,
+      //   need_user: true,
+      // },
+      // {
+      //   text: 'Банк расход',
+      //   navigate: '/doc.credit_bank_order/list',
+      //   need_meta: true,
+      //   need_user: true,
+      // },
       {
         text: 'Поступление товаров услуг',
         navigate: '/doc.purchase/list',
@@ -228,7 +228,12 @@ const items = [
   },
   {
     text: 'Справка',
-    navigate: '/help',
+    // navigate: function () {
+    //   this.props.handleClose();
+    //   window.open('https://github.com/oknosoft/windowbuilder/wiki');
+    // },
+    navigate: '/help/',
+    need_meta: true,
     icon: <IconHelp/>
   },
   {
@@ -269,7 +274,7 @@ function state_filter(id) {
 
 export function set_state_and_title(id, handleIfaceState) {
   handleIfaceState({
-    component: 'CalcOrderList',
+    component: '',
     name: 'state_filter',
     value: id,
   });

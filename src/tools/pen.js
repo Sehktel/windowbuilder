@@ -59,7 +59,7 @@ class PenControls {
       }
     }
 
-    paper._wrapper.appendChild(_cont);
+    tool._scope._wrapper.appendChild(_cont);
     _cont.className = "pen_cont";
 
     tool.project.view.on('mousemove', this.mousemove);
@@ -80,7 +80,6 @@ class PenControls {
 
     _cont.querySelector("[name=click]").onclick = this.create_click;
 
-
   }
 
   get point(){
@@ -90,16 +89,20 @@ class PenControls {
     return new paper.Point([x, y]);
   }
 
-  blur(){
-    var focused = document.activeElement;
-    if(focused == this._x)
+  blur() {
+    const focused = document.activeElement;
+    if(focused == this._x) {
       this._x.blur();
-    else if(focused == this._y)
+    }
+    else if(focused == this._y) {
       this._y.blur();
-    else if(focused == this._l)
+    }
+    else if(focused == this._l) {
       this._l.blur();
-    else if(focused == this._a)
+    }
+    else if(focused == this._a) {
       this._a.blur();
+    }
   }
 
   mousemove(event, ignore_pos) {
@@ -153,11 +156,11 @@ class PenControls {
 
   create_click() {
     setTimeout(() => {
-      this._tool.emit("mousedown", {
+      this._tool.emit('mousedown', {
         modifiers: {}
       });
       setTimeout(() => {
-        this._tool.emit("mouseup", {
+        this._tool.emit('mouseup', {
           point: this.point,
           modifiers: {}
         });
@@ -188,20 +191,20 @@ class ToolPen extends ToolElement {
 
   constructor() {
 
-    super()
+    super();
 
     Object.assign(this, {
       options: {
         name: 'pen',
         wnd: {
-          caption: "Новый сегмент профиля",
+          caption: 'Новый сегмент профиля',
           width: 320,
-          height: 240,
+          height: 320,
           allow_close: true,
           bind_generatrix: true,
           bind_node: false,
-          inset: "",
-          clr: ""
+          inset: '',
+          clr: ''
         }
       },
       point1: new paper.Point(),
@@ -210,7 +213,7 @@ class ToolPen extends ToolElement {
       hitItem: null,
       originalContent: null,
       start_binded: false,
-    })
+    });
 
     this.on({
       activate: this.on_activate,
@@ -236,55 +239,55 @@ class ToolPen extends ToolElement {
     this.sys = project._dp.sys;
 
     // восстанавливаем сохранённые параметры
-    $p.wsql.restore_options("editor", this.options);
+    $p.wsql.restore_options('editor', this.options);
     this.options.wnd.on_close = this.on_close;
 
-    ["elm_type","inset","bind_generatrix","bind_node"].forEach((prop) => {
-      if(prop == "bind_generatrix" || prop == "bind_node" || this.options.wnd[prop]){
+    ['elm_type', 'inset', 'bind_generatrix', 'bind_node'].forEach((prop) => {
+      if(prop == 'bind_generatrix' || prop == 'bind_node' || this.options.wnd[prop]) {
         profile[prop] = this.options.wnd[prop];
       }
     });
 
     // если в текущем слое есть профили, выбираем импост
     if((profile.elm_type.empty() || profile.elm_type == $p.enm.elm_types.Рама) &&
-      project.activeLayer instanceof Contour && project.activeLayer.profiles.length) {
+      project.activeLayer instanceof $p.EditorInvisible.Contour && project.activeLayer.profiles.length) {
       profile.elm_type = $p.enm.elm_types.Импост;
     }
     else if((profile.elm_type.empty() || profile.elm_type == $p.enm.elm_types.Импост) &&
-      project.activeLayer instanceof Contour && !project.activeLayer.profiles.length) {
+      project.activeLayer instanceof $p.EditorInvisible.Contour && !project.activeLayer.profiles.length) {
       profile.elm_type = $p.enm.elm_types.Рама;
     }
 
     // вставку по умолчанию получаем эмулируя событие изменения типа элемента
-    $p.dp.builder_pen.emit("value_change", {field: "elm_type"}, profile);
+    $p.dp.builder_pen.emit('value_change', {field: 'elm_type'}, profile);
 
     // цвет по умолчанию
     profile.clr = project.clr;
 
     // параметры отбора для выбора вставок
     profile._metadata('inset').choice_links = [{
-      name: ["selection",	"ref"],
+      name: ['selection', 'ref'],
       path: [(o, f) => {
           if($p.utils.is_data_obj(o)){
             return profile.rama_impost.indexOf(o) != -1;
           }
           else{
-            let refs = "";
+            let refs = '';
             profile.rama_impost.forEach((o) => {
-              if(refs){
-                refs += ", ";
+              if(refs) {
+                refs += ', ';
               }
-              refs += "'" + o.ref + "'";
+              refs += `'${o.ref}'`;
             });
-            return "_t_.ref in (" + refs + ")";
+            return '_t_.ref in (' + refs + ')';
           }
         }]
     }];
 
     // дополняем свойства поля цвет отбором по служебным цветам
-    $p.cat.clrs.selection_exclude_service(profile._metadata('clr'), this.sys);
+    $p.cat.clrs.selection_exclude_service(profile._metadata('clr'), this);
 
-    this.wnd = $p.iface.dat_blank(paper._dxw, this.options.wnd);
+    this.wnd = $p.iface.dat_blank(this._scope._dxw, this.options.wnd);
     this._grid = this.wnd.attachHeadFields({
       obj: profile
     });
@@ -294,7 +297,7 @@ class ToolPen extends ToolElement {
       wrapper: this.wnd.cell,
       width: '100%',
       height: '28px',
-      class_name: "",
+      class_name: '',
       name: 'tb_mode',
       buttons: [{
         name: 'standard_form',
@@ -302,30 +305,43 @@ class ToolPen extends ToolElement {
         tooltip: 'Добавить типовую форму',
         float: 'left',
         sub: {
-          width: '62px',
-          height:'206px',
+          width: '90px',
+          height:'190px',
           buttons: [
             {name: 'square', img: 'square.png', float: 'left'},
-            {name: 'triangle1', img: 'triangle1.png', float: 'right'},
-            {name: 'triangle2', img: 'triangle2.png', float: 'left'},
-            {name: 'triangle3', img: 'triangle3.png', float: 'right'},
+            {name: 'triangle1', img: 'triangle1.png', float: 'left'},
+            {name: 'triangle2', img: 'triangle2.png', float: 'right'},
+            {name: 'triangle3', img: 'triangle3.png', float: 'left'},
             {name: 'semicircle1', img: 'semicircle1.png', float: 'left'},
             {name: 'semicircle2', img: 'semicircle2.png', float: 'right'},
             {name: 'circle',    img: 'circle.png', float: 'left'},
-            {name: 'arc1',      img: 'arc1.png', float: 'right'},
-            {name: 'trapeze1',  img: 'trapeze1.png', float: 'left'},
-            {name: 'trapeze2',  img: 'trapeze2.png', float: 'right'},
+            {name: 'arc1',      img: 'arc1.png', float: 'left'},
+            {name: 'trapeze1',  img: 'trapeze1.png', float: 'right'},
+            {name: 'trapeze2',  img: 'trapeze2.png', float: 'left'},
             {name: 'trapeze3',  img: 'trapeze3.png', float: 'left'},
             {name: 'trapeze4',  img: 'trapeze4.png', float: 'right'},
             {name: 'trapeze5',  img: 'trapeze5.png', float: 'left'},
-            {name: 'trapeze6',  img: 'trapeze6.png', float: 'right'}]}
+            {name: 'trapeze6',  img: 'trapeze6.png', float: 'left'},
+            {name: 'trapeze7',  img: 'trapeze7.png', float: 'right'},
+            {name: 'trapeze8',  img: 'trapeze8.png', float: 'left'},
+            {name: 'trapeze9',  img: 'trapeze9.png', float: 'left'},
+            {name: 'trapeze10',  img: 'trapeze10.png', float: 'right'}]}
             },
       ],
-      image_path: "/imgs/",
+      image_path: '/imgs/',
       onclick: (name) => this.standard_form(name)
     });
-    this.wnd.tb_mode.cell.style.backgroundColor = "#f5f5f5";
-    this.wnd.cell.firstChild.style.marginTop = "22px";
+    this.wnd.tb_mode.cell.style.backgroundColor = '#f5f5f5';
+    this.wnd.cell.firstChild.style.marginTop = '22px';
+    const {standard_form} = this.wnd.tb_mode.buttons;
+    const {onmouseover} = standard_form;
+    const wnddiv = this.wnd.cell.parentElement;
+    standard_form.onmouseover = function() {
+      if(wnddiv.style.transform) {
+        wnddiv.style.transform = '';
+      }
+      onmouseover.call(this);
+    };
 
     // подмешиваем в метод wnd_options() установку доппараметров
     const wnd_options = this.wnd.wnd_options;
@@ -333,7 +349,7 @@ class ToolPen extends ToolElement {
       wnd_options.call(this.wnd, opt);
       opt.bind_generatrix = profile.bind_generatrix;
       opt.bind_node = profile.bind_node;
-    }
+    };
   }
 
   on_activate() {
@@ -369,7 +385,7 @@ class ToolPen extends ToolElement {
   }
 
   on_deactivate() {
-    paper.clear_selection_bounds();
+    this._scope.clear_selection_bounds();
 
     this.eve.off("scheme_changed", this.scheme_changed);
     this.eve.off("layer_activated", this.layer_activated);
@@ -401,7 +417,7 @@ class ToolPen extends ToolElement {
       }
 
       this.project.selectedItems.forEach((path) => {
-        if(path.parent instanceof ProfileItem){
+        if(path.parent instanceof $p.EditorInvisible.ProfileItem){
           path = path.parent;
           path.removeChildren();
           path.remove();
@@ -467,7 +483,7 @@ class ToolPen extends ToolElement {
 
       // рисуем доборный профиль
       if(this.addl_hit.glass && this.profile.elm_type == $p.enm.elm_types.Добор && !this.profile.inset.empty()){
-        new ProfileAddl({
+        new $p.EditorInvisible.ProfileAddl({
           generatrix: this.addl_hit.generatrix,
           proto: this.profile,
           parent: this.addl_hit.profile,
@@ -476,7 +492,7 @@ class ToolPen extends ToolElement {
       }
       // рисуем соединительный профиль
       else if(this.profile.elm_type == $p.enm.elm_types.Соединитель && !this.profile.inset.empty()){
-        const connective = new ProfileConnective({
+        const connective = new $p.EditorInvisible.ProfileConnective({
           generatrix: this.addl_hit.generatrix,
           proto: this.profile,
           parent: this.addl_hit.profile,
@@ -491,13 +507,13 @@ class ToolPen extends ToolElement {
           }
           const {_attr, layer} = rama;
           _attr._rays && _attr._rays.clear();
-          layer && layer.notify && layer.notify({profiles: [rama], points: []}, consts.move_points);
+          layer && layer.notify && layer.notify({profiles: [rama], points: []}, this._scope.consts.move_points);
         });
       }
     }
     else if(this.mode == 'create' && this.path) {
 
-      if (this.path.length < consts.sticking){
+      if (this.path.length < this._scope.consts.sticking){
         return;
       }
 
@@ -506,7 +522,7 @@ class ToolPen extends ToolElement {
         // находим заполнение под линией
         this.project.activeLayer.glasses(false, true).some((glass) => {
           if(glass.contains(this.path.firstSegment.point) && glass.contains(this.path.lastSegment.point)){
-            new Onlay({
+            new $p.EditorInvisible.Onlay({
               generatrix: this.path,
               proto: this.profile,
               parent: glass
@@ -519,17 +535,17 @@ class ToolPen extends ToolElement {
 
       case $p.enm.elm_types.Водоотлив:
         // рисуем разрез
-        this.last_profile = new Sectional({generatrix: this.path, proto: this.profile});
+        this.last_profile = new $p.EditorInvisible.Sectional({generatrix: this.path, proto: this.profile});
         break;
 
       case $p.enm.elm_types.Линия:
         // рисуем линию
-        this.last_profile = new BaseLine({generatrix: this.path, proto: this.profile});
+        this.last_profile = new $p.EditorInvisible.BaseLine({generatrix: this.path, proto: this.profile});
         break;
 
       default:
         // рисуем профиль
-        this.last_profile = new Profile({generatrix: this.path, proto: this.profile});
+        this.last_profile = new $p.EditorInvisible.Profile({generatrix: this.path, proto: this.profile});
       }
 
       this.path = null;
@@ -560,13 +576,13 @@ class ToolPen extends ToolElement {
       }
 
       // TODO: Выделяем элемент, если он подходящего типа
-      if(item instanceof ProfileItem && item.isInserted()) {
-        item.attache_wnd(paper._acc.elm);
+      if(item instanceof $p.EditorInvisible.ProfileItem && item.isInserted()) {
+        item.attache_wnd(this._scope._acc.elm);
         whas_select = true;
         this._controls.blur();
       }
-      else if(item instanceof Filling && item.visible) {
-        item.attache_wnd(paper._acc.elm);
+      else if(item instanceof $p.EditorInvisible.Filling && item.visible) {
+        item.attache_wnd(this._scope._acc.elm);
         whas_select = true;
         this._controls.blur();
       }
@@ -625,10 +641,10 @@ class ToolPen extends ToolElement {
       this.path.removeSegments();
 
       if(this.addl_hit.glass){
-        this.draw_addl()
+        this.draw_addl();
       }
       else{
-        this.draw_connective()
+        this.draw_connective();
       }
     }
     else if(this.path){
@@ -641,7 +657,7 @@ class ToolPen extends ToolElement {
           invert = false,
           handlePos;
 
-        if (delta.length < consts.sticking){
+        if (delta.length < this._scope.consts.sticking){
           return;
         }
 
@@ -665,7 +681,7 @@ class ToolPen extends ToolElement {
         }
 
         if (dragIn || dragOut) {
-          var i, res, element, bind = this.profile.bind_node ? "node_" : "";
+          let res, bind = this.profile.bind_node ? "node_" : "";
 
           if(this.profile.bind_generatrix){
             bind += "generatrix";
@@ -689,7 +705,7 @@ class ToolPen extends ToolElement {
             // при отжатом shift пытаемся привязать точку к узлам или кратно 45
             let bpoint = this.point1.add(delta);
             if(!event.modifiers.shift) {
-              if(!bpoint.bind_to_nodes(true)){
+              if(!bpoint.bind_to_nodes(true, project)){
                 bpoint = this.point1.add(delta.snap_to_angle());
               }
             }
@@ -706,7 +722,7 @@ class ToolPen extends ToolElement {
 
               if(this.profile.elm_type == $p.enm.elm_types.Раскладка){
 
-                res = Onlay.prototype.bind_node(this.path.firstSegment.point, project.activeLayer.glasses(false, true));
+                res = $p.EditorInvisible.Onlay.prototype.bind_node(this.path.firstSegment.point, project.activeLayer.glasses(false, true));
                 if(res.binded){
                   this.path.firstSegment.point = this.point1 = res.point;
                 }
@@ -720,19 +736,25 @@ class ToolPen extends ToolElement {
 
                   // сначала смотрим на доборы, затем - на сам профиль
                   if(element.children.some((addl) => {
-                      if(addl instanceof ProfileAddl && project.check_distance(addl, null, res, this.path.firstSegment.point, bind) === false){
-                        this.path.firstSegment.point = this.point1 = res.point;
-                        return true;
-                      }
-                    })){
+                    if(addl instanceof $p.EditorInvisible.ProfileAddl &&
+                      project.check_distance(addl, null, res, this.path.firstSegment.point, bind) === false) {
+                      this.path.firstSegment.point = this.point1 = res.point;
+                      return true;
+                    }
+                  })) {
                     return true;
-
-                  }else if (project.check_distance(element, null, res, this.path.firstSegment.point, bind) === false ){
+                  }
+                  else if(project.check_distance(element, null, res, this.path.firstSegment.point, bind) === false) {
                     this.path.firstSegment.point = this.point1 = res.point;
                     return true;
                   }
-                })
+                });
 
+                this.start_binded = true;
+              }
+              else {
+                const {x, y} = this.path.firstSegment.point;
+                this.path.firstSegment.point = this.point1 = new paper.Point((x / 10).round() * 10, (y / 10).round() * 10);
                 this.start_binded = true;
               }
             }
@@ -740,7 +762,7 @@ class ToolPen extends ToolElement {
             // попытаемся привязать конец пути к профилям (и или заполнениям - для раскладок) контура
             if(this.profile.elm_type == $p.enm.elm_types.Раскладка){
 
-              res = Onlay.prototype.bind_node(this.path.lastSegment.point, project.activeLayer.glasses(false, true));
+              res = $p.EditorInvisible.Onlay.prototype.bind_node(this.path.lastSegment.point, project.activeLayer.glasses(false, true));
               if(res.binded)
                 this.path.lastSegment.point = res.point;
 
@@ -752,7 +774,8 @@ class ToolPen extends ToolElement {
 
                 // сначала смотрим на доборы, затем - на сам профиль
                 if(element.children.some((addl) => {
-                    if(addl instanceof ProfileAddl && project.check_distance(addl, null, res, this.path.lastSegment.point, bind) === false){
+                    if(addl instanceof $p.EditorInvisible.ProfileAddl &&
+                      project.check_distance(addl, null, res, this.path.lastSegment.point, bind) === false){
                       this.path.lastSegment.point = res.point;
                       return true;
                     }
@@ -788,7 +811,7 @@ class ToolPen extends ToolElement {
         this.path = null;
       }
 
-      if(event.className != "ToolEvent"){
+      if(event.className != 'ToolEvent') {
         project.register_update();
       }
     }
@@ -861,14 +884,16 @@ class ToolPen extends ToolElement {
   hitTest_addl(event) {
 
     const hitSize = 16;
+    const {project, _scope} = this;
 
     if (event.point){
-      this.hitItem = this.project.hitTest(event.point, { stroke:true, curves:true, tolerance: hitSize });
+      this.hitItem = project.hitTest(event.point, { stroke:true, curves:true, tolerance: hitSize });
     }
 
     if (this.hitItem) {
 
-      if(this.hitItem.item.layer == this.project.activeLayer &&  this.hitItem.item.parent instanceof ProfileItem && !(this.hitItem.item.parent instanceof Onlay)){
+      if(this.hitItem.item.layer == project.activeLayer &&
+        this.hitItem.item.parent instanceof $p.EditorInvisible.ProfileItem && !(this.hitItem.item.parent instanceof $p.EditorInvisible.Onlay)){
         // для профиля, определяем внешнюю или внутреннюю сторону и ближайшее примыкание
 
         const hit = {
@@ -895,30 +920,30 @@ class ToolPen extends ToolElement {
                 return true;
               }
             }
-          })
+          });
 
         });
 
         if(hit.glass){
           this.addl_hit = hit;
-          paper.canvas_cursor('cursor-pen-adjust');
+          _scope.canvas_cursor('cursor-pen-adjust');
         }
 
       }
-      else if(this.hitItem.item.parent instanceof Filling){
+      else if(this.hitItem.item.parent instanceof $p.EditorInvisible.Filling){
         // для заполнения, ищем ребро и примыкающий профиль
 
         // this.addl_hit = this.hitItem;
-        // paper.canvas_cursor('cursor-pen-adjust');
+        // _scope.canvas_cursor('cursor-pen-adjust');
 
       }else{
-        paper.canvas_cursor('cursor-pen-freehand');
+        _scope.canvas_cursor('cursor-pen-freehand');
       }
 
     } else {
 
-      this.hitItem = this.project.hitTest(event.point, { fill:true, visible: true, tolerance: hitSize  });
-      paper.canvas_cursor('cursor-pen-freehand');
+      this.hitItem = project.hitTest(event.point, { fill:true, visible: true, tolerance: hitSize  });
+      _scope.canvas_cursor('cursor-pen-freehand');
     }
 
   }
@@ -926,7 +951,7 @@ class ToolPen extends ToolElement {
   hitTest_connective(event) {
 
     const hitSize = 16;
-    const {project} = this;
+    const {project, _scope} = this;
     const rootLayer = project.rootLayer();
 
     if (event.point){
@@ -935,7 +960,7 @@ class ToolPen extends ToolElement {
 
     if (this.hitItem) {
 
-      if(this.hitItem.item.parent instanceof ProfileItem && !(this.hitItem.item.parent instanceof Onlay)){
+      if(this.hitItem.item.parent instanceof $p.EditorInvisible.ProfileItem && !(this.hitItem.item.parent instanceof $p.EditorInvisible.Onlay)){
         // для профиля, определяем внешнюю или внутреннюю сторону и ближайшее примыкание
 
         const hit = {
@@ -955,18 +980,18 @@ class ToolPen extends ToolElement {
         // для соединителей, нас интересуют только внешние рёбра
         if(hit.side == "outer"){
           this.addl_hit = hit;
-          paper.canvas_cursor('cursor-pen-adjust');
+          _scope.canvas_cursor('cursor-pen-adjust');
         }
 
       }
       else{
-        paper.canvas_cursor('cursor-pen-freehand');
+        _scope.canvas_cursor('cursor-pen-freehand');
       }
 
     }
     else {
       this.hitItem = project.hitTest(event.point, { fill:true, visible: true, tolerance: hitSize  });
-      paper.canvas_cursor('cursor-pen-freehand');
+      _scope.canvas_cursor('cursor-pen-freehand');
     }
   }
 
@@ -993,12 +1018,12 @@ class ToolPen extends ToolElement {
         this.hitItem = this.project.hitTest(event.point, { fill:true, visible: true, tolerance: hitSize  });
       }
 
-      if (this.hitItem && this.hitItem.item.parent instanceof ProfileItem
+      if (this.hitItem && this.hitItem.item.parent instanceof $p.EditorInvisible.ProfileItem
         && (this.hitItem.type == 'fill' || this.hitItem.type == 'stroke')) {
-        paper.canvas_cursor('cursor-pen-adjust');
+        this._scope.canvas_cursor('cursor-pen-adjust');
       }
       else {
-        paper.canvas_cursor('cursor-pen-freehand');
+        this._scope.canvas_cursor('cursor-pen-freehand');
       }
     }
 
@@ -1013,38 +1038,13 @@ class ToolPen extends ToolElement {
    * @param [name] {String} - имя типовой формы
    */
   standard_form(name) {
-
-    if(name == 'standard_form'){
-      name = 'square'
-    }
-
-    if(this['add_' + name]){
+    if(this['add_' + name]) {
       this['add_' + name](this.project.bounds);
       this.project.zoom_fit();
     }
-    else{
-      $p.msg.show_not_implemented();
+    else {
+      name !== 'standard_form' && $p.msg.show_not_implemented();
     }
-    // switch(name) {
-    //   case 'square':
-    //   case 'triangle1':
-    //   case 'triangle2':
-    //   case 'triangle3':
-    //   case 'semicircle1':
-    //   case 'semicircle2':
-    //   case 'circle':
-    //   case 'arc1':
-    //   case 'trapeze1':
-    //   case 'trapeze2':
-    //   case 'trapeze3':
-    //   case 'trapeze4':
-    //   case 'trapeze5':
-    //   case 'trapeze6':
-    //     // типовая форма
-    //     _editor.standard_form(name);
-    //     break;
-    // }
-
   }
 
   /**
@@ -1052,14 +1052,16 @@ class ToolPen extends ToolElement {
    * @param points {Array}
    */
   add_sequence(points) {
+    const profiles = [];
     points.forEach((segments) => {
-      new Profile({
+      profiles.push(new $p.EditorInvisible.Profile({
         generatrix: new paper.Path({
           strokeColor: 'black',
           segments: segments
         }), proto: this.profile
-      });
+      }));
     });
+    return profiles;
   }
 
   /**
@@ -1113,9 +1115,225 @@ class ToolPen extends ToolElement {
     // находим правую нижнюю точку
     const point = bounds.bottomRight;
     this.add_sequence([
-      [point, point.add([1000, -1000])],
-      [point.add([1000, -1000]), point.add([2000, 0])],
-      [point.add([2000, 0]), point]
+      [point, point.add([500, -500])],
+      [point.add([500, -500]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+  }
+
+  /**
+   * Рисует semicircle1
+   * @param bounds
+   */
+  add_semicircle1(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    const profiles = this.add_sequence([
+      [point, point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+    profiles[0].arc_h = 500;
+  }
+
+  /**
+   * Рисует semicircle2
+   * @param bounds
+   */
+  add_semicircle2(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    const profiles = this.add_sequence([
+      [point, point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+    profiles[1].arc_h = 500;
+  }
+
+  /**
+   * Рисует circle
+   * @param bounds
+   */
+  add_circle(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    const profiles = this.add_sequence([
+      [point, point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+    profiles[0].arc_h = 500;
+    profiles[1].arc_h = 500;
+  }
+
+  /**
+   * Рисует arc1
+   * @param bounds
+   */
+  add_arc1(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    const profiles = this.add_sequence([
+      [point, point.add([0, -500])],
+      [point.add([0, -500]), point.add([1000, -500])],
+      [point.add([1000, -500]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+    profiles[1].arc_h = 500;
+  }
+
+  /**
+   * Рисует trapeze1
+   * @param bounds
+   */
+  add_trapeze1(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point, point.add([0, -500])],
+      [point.add([0, -500]), point.add([500, -1000])],
+      [point.add([500, -1000]), point.add([1000, -500])],
+      [point.add([1000, -500]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+  }
+
+  /**
+   * Рисует trapeze2
+   * @param bounds
+   */
+  add_trapeze2(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point, point.add([0, -750])],
+      [point.add([0, -750]), point.add([250, -1000])],
+      [point.add([250, -1000]), point.add([750, -1000])],
+      [point.add([750, -1000]), point.add([1000, -750])],
+      [point.add([1000, -750]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+  }
+
+  /**
+   * Рисует trapeze3
+   * @param bounds
+   */
+  add_trapeze3(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point, point.add([0, -1000])],
+      [point.add([0, -1000]), point.add([500, -1000])],
+      [point.add([500, -1000]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+  }
+
+  /**
+   * Рисует trapeze4
+   * @param bounds
+   */
+  add_trapeze4(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point, point.add([500, -1000])],
+      [point.add([500, -1000]), point.add([1000, -1000])],
+      [point.add([1000, -1000]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+  }
+
+  /**
+   * Рисует trapeze5
+   * @param bounds
+   */
+  add_trapeze5(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point, point.add([0, -1000])],
+      [point.add([0, -1000]), point.add([1000, -500])],
+      [point.add([1000, -500]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+  }
+
+  /**
+   * Рисует trapeze6
+   * @param bounds
+   */
+  add_trapeze6(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point, point.add([0, -500])],
+      [point.add([0, -500]), point.add([1000, -1000])],
+      [point.add([1000, -1000]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+  }
+
+  /**
+   * Рисует trapeze7
+   * @param bounds
+   */
+  add_trapeze7(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point, point.add([0, -500])],
+      [point.add([0, -500]), point.add([500, -1000])],
+      [point.add([500, -1000]), point.add([1000, -1000])],
+      [point.add([1000, -1000]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+  }
+
+  /**
+   * Рисует trapeze8
+   * @param bounds
+   */
+  add_trapeze8(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point, point.add([0, -1000])],
+      [point.add([0, -1000]), point.add([500, -1000])],
+      [point.add([500, -1000]), point.add([1000, -500])],
+      [point.add([1000, -500]), point.add([1000, 0])],
+      [point.add([1000, 0]), point]
+    ]);
+  }
+
+  /**
+   * Рисует trapeze9
+   * @param bounds
+   */
+  add_trapeze9(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point.add([0, -500]), point.add([0, -1000])],
+      [point.add([0, -1000]), point.add([1000, -1000])],
+      [point.add([1000, -1000]), point.add([1000, 0])],
+      [point.add([1000, 0]), point.add([500, 0])],
+      [point.add([500, 0]), point.add([0, -500])]
+    ]);
+  }
+
+  /**
+   * Рисует trapeze10
+   * @param bounds
+   */
+  add_trapeze10(bounds) {
+    // находим правую нижнюю точку
+    const point = bounds.bottomRight;
+    this.add_sequence([
+      [point, point.add([0, -1000])],
+      [point.add([0, -1000]), point.add([1000, -1000])],
+      [point.add([1000, -1000]), point.add([1000, -500])],
+      [point.add([1000, -500]), point.add([500, 0])],
+      [point.add([500, 0]), point]
     ]);
   }
 
@@ -1125,7 +1343,7 @@ class ToolPen extends ToolElement {
    */
   decorate_layers(reset) {
     const {activeLayer} = this.project;
-    this.project.getItems({class: Contour}).forEach((l) => {
+    this.project.getItems({class: $p.EditorInvisible.Contour}).forEach((l) => {
       l.opacity = (l == activeLayer || reset) ? 1 : 0.5;
     });
   }

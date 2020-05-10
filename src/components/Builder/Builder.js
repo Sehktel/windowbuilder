@@ -15,11 +15,21 @@ class Builder extends DhtmlxCell {
   }
 
   componentWillUnmount() {
-    //$p.off('hash_route', this.hash_route);
     const {cell, _editor} = this;
     if(_editor){
+      const {ox} = _editor.project;
+      const {calc_order} = ox;
       _editor.unload();
+      if($p.ui.idle) {
+        _editor.close(ox, calc_order);
+      }
       delete this._editor;
+
+      // если закрыли без сохранения характеристики - восстанавливаем заказ из базы
+      if(ox._modified && calc_order._modified) {
+        calc_order._data._reload = true;
+      }
+
     }
     cell.detachObject(true);
     super.componentWillUnmount();
@@ -30,18 +40,24 @@ class Builder extends DhtmlxCell {
    * @param loc
    * @return {*}
    */
-  prompt(loc) {
-    return this._editor.prompt(loc);
+  prompt = () => {
+    if(!this._editor || !this._editor.project) {
+      return true;
+    }
+    const {ox} = this._editor.project;
+    return ox && ox._modified ? `Изделие ${ox.prod_name(true)} изменено.\n\nЗакрыть без сохранения?` : true;
   }
 
   render() {
     return <div>
-      <Prompt when message={this.prompt.bind(this)} />
+      <Prompt when message={this.prompt} />
       <div ref={el => this.el = el}/>
     </div>;
   }
 
 }
+
+Builder.rname = 'Builder';
 
 export default WindowSizer(withIface(Builder));
 

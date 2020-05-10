@@ -18,9 +18,7 @@
 class ToolText extends ToolElement {
 
   constructor() {
-
-    super()
-
+    super();
     Object.assign(this, {
       options: {
         name: 'text',
@@ -35,34 +33,35 @@ class ToolText extends ToolElement {
       hitItem: null,
       originalContent: null,
       changed: false
-    })
+    });
 
     this.on({
 
-      activate: function() {
+      activate() {
         this.on_activate('cursor-text-select');
       },
 
-      deactivate: function() {
-        paper.hide_selection_bounds();
+      deactivate() {
+        this._scope.hide_selection_bounds();
         this.detache_wnd();
       },
 
-      mousedown: function(event) {
+      mousedown(event) {
         this.text = null;
         this.changed = false;
 
         this.project.deselectAll();
         this.mouseStartPos = event.point.clone();
 
-        if (this.hitItem) {
+        if(this.hitItem) {
 
-          if(this.hitItem.item instanceof paper.PointText){
+          if(this.hitItem.item instanceof paper.PointText) {
             this.text = this.hitItem.item;
             this.text.selected = true;
 
-          }else {
-            this.text = new FreeText({
+          }
+          else {
+            this.text = new $p.EditorInvisible.FreeText({
               parent: this.hitItem.item.layer.l_text,
               point: this.mouseStartPos,
               content: '...',
@@ -73,49 +72,48 @@ class ToolText extends ToolElement {
           this.textStartPos = this.text.point;
 
           // включить диалог свойст текстового элемента
-          if(!this.wnd || !this.wnd.elmnts){
-            $p.wsql.restore_options("editor", this.options);
-            this.wnd = $p.iface.dat_blank(paper._dxw, this.options.wnd);
+          if(!this.wnd || !this.wnd.elmnts) {
+            $p.wsql.restore_options('editor', this.options);
+            this.wnd = $p.iface.dat_blank(this._scope._dxw, this.options.wnd);
             this._grid = this.wnd.attachHeadFields({
               obj: this.text
             });
-          }else{
-            this._grid.attach({obj: this.text})
+          }
+          else {
+            this._grid.attach({obj: this.text});
           }
 
-        }else
+        }
+        else {
           this.detache_wnd();
+        }
 
       },
 
-      mouseup: function(event) {
+      mouseup() {
 
         if (this.mode && this.changed) {
           //undo.snapshot("Move Shapes");
         }
 
-        paper.canvas_cursor('cursor-arrow-lay');
+        this._scope.canvas_cursor('cursor-arrow-lay');
 
       },
 
-      mousedrag: function(event) {
+      mousedrag(event) {
 
         if (this.text) {
-          var delta = event.point.subtract(this.mouseStartPos);
-          if (event.modifiers.shift)
+          let delta = event.point.subtract(this.mouseStartPos);
+          if(event.modifiers.shift) {
             delta = delta.snap_to_angle();
-
+          }
           this.text.move_points(this.textStartPos.add(delta));
-
         }
-
       },
 
-      mousemove: function(event) {
-        this.hitTest(event);
-      },
+      mousemove: this.hitTest,
 
-      keydown: function(event) {
+      keydown(event) {
 
         if (event.key == '-' || event.key == 'delete' || event.key == 'backspace') {
 
@@ -124,9 +122,9 @@ class ToolText extends ToolElement {
           }
 
           for (const text of  this.project.selectedItems) {
-            if(text instanceof FreeText){
+            if(text instanceof $p.EditorInvisible.FreeText){
               text.text = "";
-              setTimeout(() => paper.view.update(), 100);
+              setTimeout(() => this._scope.view.update(), 100);
             }
           }
 
@@ -134,8 +132,7 @@ class ToolText extends ToolElement {
           return false;
         }
       }
-    })
-
+    });
   }
 
   hitTest(event) {
@@ -149,21 +146,21 @@ class ToolText extends ToolElement {
     }
     if(!this.hitItem) {
       const hit = project.hitTest(event.point, {fill: false, stroke: true, tolerance: hitSize});
-      if(hit && hit.item.parent instanceof Sectional) {
+      if(hit && hit.item.parent instanceof $p.EditorInvisible.Sectional) {
         this.hitItem = hit;
       }
     }
 
     if(this.hitItem) {
       if(this.hitItem.item instanceof paper.PointText) {
-        paper.canvas_cursor('cursor-text');     // указатель с черным Т
+        this._scope.canvas_cursor('cursor-text');     // указатель с черным Т
       }
       else {
-        paper.canvas_cursor('cursor-text-add'); // указатель с серым Т
+        this._scope.canvas_cursor('cursor-text-add'); // указатель с серым Т
       }
     }
     else {
-      paper.canvas_cursor('cursor-text-select');  // указатель с вопросом
+      this._scope.canvas_cursor('cursor-text-select');  // указатель с вопросом
     }
 
     return true;

@@ -40,6 +40,7 @@ class SchemeLayers {
       }
       else {
         editor.project.ox.builder_props = {[id]: state};
+        editor.project.register_change(true);
       }
       editor.project.register_update();
     });
@@ -76,21 +77,44 @@ class SchemeLayers {
   }
 
   layer_activated(contour) {
-    if(contour && contour.cnstr && this.tree && this.tree.getSelectedId && contour.cnstr != this.tree.getSelectedId()){
-      if(this.tree.items[contour.cnstr]){
-        this.tree.selectItem(contour.cnstr);
+    const {tree} = this;
+    if(contour && contour.cnstr && tree && tree.getSelectedId && contour.cnstr != tree.getSelectedId()){
+      // если выделено несколько створок, переносим выделение на раму
+      const layers = [];
+      const {project} = this.editor;
+      for(const elm of project.getSelectedItems()) {
+        elm.layer instanceof $p.EditorInvisible.Contour && layers.indexOf(elm.layer) === -1 && layers.push(elm.layer);
+      }
+      if(layers.length > 1) {
+        const parents = [];
+        for(const elm of layers) {
+          let parent = elm.parent;
+          while (parent && parent.parent) {
+            parent = parent.parent;
+          }
+          if(!parent) {
+            parent = elm;
+          }
+          contour = parent;
+          break;
+        }
+      }
+
+      if(tree.items[contour.cnstr]){
+        tree.selectItem(contour.cnstr);
         this._set_text(this.layer_text(contour));
       }
-    };
+    }
   }
 
   contour_redrawed(contour, bounds) {
-    if(this.tree && this.tree.setItemText){
+    const {tree} = this;
+    if(tree && tree.setItemText){
       const text = this.layer_text(contour, bounds);
-      this.tree.setItemText(contour.cnstr, text);
+      tree.setItemText(contour.cnstr, text);
       if(contour.project.activeLayer == contour){
         this._set_text(text);
-      };
+      }
     }
   }
 
@@ -109,54 +133,52 @@ class SchemeLayers {
   }
 
   listener(obj, fields) {
-    const {tree} = this;
-    if (tree && tree.clearAll && fields.constructions){
+    const {tree, editor: {project}} = this;
+
+    if(tree && tree.clearAll && fields.constructions) {
 
       // добавляем слои изделия
       tree.clearAll();
-      paper.project.contours.forEach((layer) => {
+      project.contours.forEach((layer) => {
         this.load_layer(layer);
         tree.openItem(layer.cnstr);
       });
 
-      // служебный слой размеров
-      tree.addItem("auto_lines", "Авторазмерные линии", 0);
-      tree.addItem("custom_lines", "Доп. размерные линии", 0);
+      const props = {
+        auto_lines: 'Авторазмерные линии',
+        custom_lines: 'Доп. размерные линии',
+        cnns: 'Соединители',
+        visualization: 'Визуализация доп. элементов',
+        txts: 'Комментарии',
+      };
+      for (const prop in props) {
+        tree.addItem(prop, props[prop], 0);
+      }
 
-      // служебный слой соединителей
-      tree.addItem("cnns", "Соединители", 0);
-
-      // служебный слой визуализации
-      tree.addItem("visualization", "Визуализация доп. элементов", 0);
-
-      // служебный слой текстовых комментариев
-      tree.addItem("txts", "Комментарии", 0);
-
-      const {builder_props} = this.editor.project.ox;
-      for(const prop in builder_props) {
-        if(builder_props[prop]) {
-          tree.checkItem(prop);
-        }
+      const {builder_props} = project.ox;
+      for (const prop in builder_props) {
+        props[prop] && builder_props[prop] && tree.checkItem(prop);
       }
     }
   }
 
   drop_layer() {
-    let cnstr = this.tree.getSelectedId(), l;
+    const {tree, editor: {project}} = this;
+    let cnstr = tree.getSelectedId(), l;
     if(cnstr){
-      l = paper.project.getItem({cnstr: Number(cnstr)});
+      l = project.getItem({cnstr: Number(cnstr)});
     }
-    else if(l = paper.project.activeLayer){
+    else if(l = project.activeLayer){
       cnstr = l.cnstr;
     }
     if(cnstr && l){
-      this.tree.deleteItem(cnstr);
+      tree.deleteItem(cnstr);
       cnstr = l.parent ? l.parent.cnstr : 0;
       l.remove();
       setTimeout(() => {
-        paper.project.zoom_fit();
+        project.zoom_fit();
         if(cnstr){
-          this.tree.selectItem(cnstr);
+          tree.selectItem(cnstr);
         }
       }, 100);
     }
@@ -181,13 +203,14 @@ class SchemeLayers {
 
 class StvProps {
 
-  constructor(cell, eve) {
+  constructor(cell, editor) {
     this.layout = cell;
+    this.editor = editor;
     this.attach = this.attach.bind(this);
     this.reload = this.reload.bind(this);
     this.on_refresh_prm_links = this.on_refresh_prm_links.bind(this);
 
-    this.eve = eve.on({
+    this.eve = editor.eve.on({
       layer_activated: this.attach,
       furn_changed: this.reload,
       refresh_prm_links: this.on_refresh_prm_links,
@@ -248,8 +271,8 @@ class StvProps {
 
   on_refresh_prm_links(contour) {
     const {_grid} = this;
-    if(_grid && contour == _grid._obj){
-      this.on_prm_change('0|0', null, true);
+    if(_grid && contour === _grid._obj){
+      this.reload();
     }
   }
 
@@ -262,7 +285,7 @@ class StvProps {
   on_prm_change(field, value, realy_changed) {
 
     const pnames = field && field.split('|');
-    const {_grid} = this;
+    const {_grid, editor} = this;
 
     if(!field || !_grid || pnames.length < 2){
       return;
@@ -298,7 +321,7 @@ class StvProps {
 
       // проверим вхождение значения в доступные и при необходимости изменим
       if(links.length && param.linked_values(links, prow)){
-        paper.project.register_change();
+        editor.project.register_change();
         _grid._obj._manager.emit_async('update', prow, {value: prow._obj.value});
       }
 
@@ -330,15 +353,16 @@ class StvProps {
 
 class SchemeProps {
 
-  constructor(cell, eve) {
+  constructor(cell, editor) {
 
     this.layout = cell;
+    this.editor = editor;
 
     this.reflect_changes = this.reflect_changes.bind(this);
     this.contour_redrawed = this.contour_redrawed.bind(this);
     this.scheme_snapshot = this.scheme_snapshot.bind(this);
 
-    this.eve = eve.on({
+    this.eve = editor.eve.on({
       // начинаем следить за изменениями размеров при перерисовке контуров
       contour_redrawed: this.contour_redrawed,
       // при готовности снапшота, обновляем суммы и цены
@@ -355,9 +379,9 @@ class SchemeProps {
   }
 
   scheme_snapshot(scheme, attr) {
-    const {_obj, _reflect_id} = this;
+    const {_obj, editor: {project}} = this;
     const {_calc_order_row} = scheme._attr;
-    if(_obj && scheme == paper.project && !attr.clipboard && _calc_order_row){
+    if(_obj && scheme === project && !attr.clipboard && _calc_order_row){
       ["price_internal","amount_internal","price","amount"].forEach((fld) => {
         _obj[fld] = _calc_order_row[fld];
       });
@@ -366,11 +390,10 @@ class SchemeProps {
 
   reflect_changes() {
     this._reflect_id = 0;
-    const {_obj} = this;
-    const {project} = paper;
+    const {_obj, editor: {project}} = this;
     if(project && _obj) {
-      _obj.len = project.bounds.width.round(0);
-      _obj.height = project.bounds.height.round(0);
+      _obj.len = project.bounds.width.round();
+      _obj.height = project.bounds.height.round();
       _obj.s = project.area;
     }
   }
@@ -528,7 +551,7 @@ class EditorAccordion {
           case 'delete':
             _editor.project.selectedItems.forEach((path) => {
               const {parent} = path;
-              if(parent instanceof ProfileItem){
+              if(parent instanceof $p.EditorInvisible.ProfileItem){
                 parent.removeChildren();
                 parent.remove();
               }
@@ -536,7 +559,7 @@ class EditorAccordion {
             break;
 
           default:
-            _editor.profile_align(name)
+            _editor.profile_align(name);
         }
       }
     });
@@ -567,7 +590,7 @@ class EditorAccordion {
         switch(name) {
 
           case 'new_stv':
-            const fillings = _editor.project.getItems({class: Filling, selected: true});
+            const fillings = _editor.project.getItems({class: $p.EditorInvisible.Filling, selected: true});
             if(fillings.length){
               fillings[0].create_leaf();
             }
@@ -587,7 +610,7 @@ class EditorAccordion {
           case 'new_layer':
 
             // создаём пустой новый слой
-            new Contour({parent: undefined});
+            new $p.EditorInvisible.Contour({parent: undefined});
 
             // оповещаем мир о новых слоях
             _editor.eve.emit_async('rows', _editor.project.ox, {constructions: true});
@@ -656,7 +679,7 @@ class EditorAccordion {
         return false;
       }
     });
-    this.stv = new StvProps(this._stv, _editor.eve);
+    this.stv = new StvProps(this._stv, _editor);
 
     /**
      * свойства изделия
@@ -698,15 +721,8 @@ class EditorAccordion {
         return false;
       }
     });
-    this.props = new SchemeProps(this._prod, _editor.eve);
+    this.props = new SchemeProps(this._prod, _editor);
 
-    /**
-     * журнал событий
-     */
-    // this.log = $p.ireg.log.form_list(this.tabbar.cells('log'), {
-    //   hide_header: true,
-    //   hide_text: true
-    // });
 
   }
 
@@ -730,6 +746,6 @@ class EditorAccordion {
     }
   }
 
-};
+}
 
 

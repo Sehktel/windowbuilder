@@ -8,8 +8,6 @@
  * @module dp_buyers_order
  */
 
-import CalcOrderAdditions from '../../components/CalcOrderAdditions';
-
 export default function ($p) {
 
   // переопределяем свойства цвет и система - они будут псевдонимами свойств текущей характеристики
@@ -56,8 +54,16 @@ export default function ($p) {
 
     // TODO пробежать по всем строкам ниже удаляемой и заменить elm в параметрах
     del_row(row) {
-      if(row._owner.name === 'production') {
-        return;
+      const {_owner: {_owner, _name}} = row;
+      if(_name === 'production') {
+        // удаляем параметры текущей строки
+        _owner.product_params.clear({elm: row.row});
+        // корректируем elm в параметрах нижележащих строк
+        _owner.product_params.forEach(prm => {
+          if (prm.elm > row.row) {
+            prm.elm--;
+          }
+        });
       }
     }
   };
@@ -86,23 +92,54 @@ export default function ($p) {
     // при изменении вставки перезаполним параметры
     value_change(field, type, value) {
 
-      if(field == 'len' || field == 'height') {
+      if(field === 'len' || field === 'height') {
         this[field] = value;
         if(this.len != 0 && this.height != 0) {
           this.s = (this.height * this.len / 1000000).round(3);
         }
       }
 
-      if(field == 'inset') {
+      if(field === 'inset') {
         const {_owner, row} = this;
-        if(this.inset != value) {
+        if(this.inset != value || type === 'force') {
           this.inset = value;
           const {product_params} = _owner._owner;
+          const defaults = this.inset.product_params;
           product_params.clear({elm: row});
-          this.inset.used_params.forEach((param) => product_params.add({
-            elm: row,
-            param: param
-          }));
+          this.inset.used_params.forEach((param) => {
+            const prow = product_params.add({elm: row, param: param});
+
+            // подстановка умолчаний для параметра
+            defaults.find_rows({param}, (drow) => {
+              if(drow.value && (drow.value != $p.utils.blank.guid)) {
+                prow.value = drow.value;
+              }
+              else if(drow.list) {
+                try {
+                  prow.value = JSON.parse(drow.list)[0];
+                }
+                catch (e) {}
+              }
+            });
+
+            // подстановка умолчаний для цвета
+            const {pclrs} = $p.DpBuyers_orderProductionRow;
+            if(!pclrs.size) {
+              const {properties} = $p.job_prm;
+              pclrs.add(properties.clr_inset);
+              pclrs.add(properties.clr_elm);
+              pclrs.add(properties.clr_product);
+            }
+            defaults.forEach((drow) => {
+              if(pclrs.has(drow.param)) {
+                $p.record_log(`deprecated: Для установки цвета по умолчанию, используйте группу цветов вставки, а не предопределенный параметр
+Вставка: ${this.inset.name} (${this.inset.id})`);
+                this.clr = drow.value;
+                return false;
+              }
+            });
+
+          });
           this._manager.emit_async('rows', _owner._owner, {product_params: true});
         }
       }
@@ -110,18 +147,52 @@ export default function ($p) {
 
   };
 
-  // форма допов и услуг
-  $p.dp.buyers_order.open_additions = function (wnd, o, handlers) {
+  $p.DpBuyers_orderProductionRow.pclrs = new Set();
 
-    handlers.handleIfaceState({
-      component: 'DataObjPage',
-      name: 'dialog',
-      value: {
-        ref: o.ref,
-        wnd: wnd,
-        Component: CalcOrderAdditions
-      },
-    });
+  // вызов формы подключаемого react компонента из dhtmlx
+  $p.dp.buyers_order.open_component = function (wnd, o, handlers, component, area = 'DataObjPage') {
+
+    let imodule;
+    switch (component){
+    case 'ClientOfDealer':
+      imodule = import('../../components/CalcOrder/ClientOfDealer');
+      break;
+    case 'ClientOfDealerSearch':
+      imodule = import('../../components/CalcOrder/ClientOfDealerSearch');
+      break;
+    case 'PushUtils':
+      imodule = import('../../components/PushUtils');
+      break;
+    case 'Additions':
+      imodule = import('../../components/CalcOrder/Additions');
+      break;
+    case 'AdditionsExt':
+      imodule = import('../../components/CalcOrder/AdditionsExt');
+      break;
+    case 'Jalousie':
+      imodule = import('../../components/CalcOrder/Jalousie');
+      break;
+    case 'ChangeRecalc':
+      imodule = import('../../components/CalcOrder/ChangeRecalc');
+      break;
+    case 'CutEvaluation':
+      imodule = import('../../components/CalcOrder/CutEvaluation');
+      break;
+    case 'DeliveryAddr':
+      imodule = import('../../components/DeliveryAddr');
+      break;
+    }
+    imodule.then((module) => handlers.handleIfaceState({
+        component: area,
+        name: 'dialog',
+        value: {
+          ref: o.ref,
+          cmd: o.cmd,
+          _mgr: o._mgr || o._manager,
+          wnd: wnd,
+          Component: module.default
+        },
+      }));
   };
 
 }

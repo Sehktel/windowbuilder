@@ -66,6 +66,9 @@ class UndoRedo {
     const snapshot = scheme._attr._snapshot || (attr && attr.snapshot);
     this._snap_timer && clearTimeout(this._snap_timer);
     this._snap_timer = 0;
+    if(scheme._scope.tool.mouseDown) {
+      return;
+    }
     if (!snapshot && scheme == this._editor.project) {
       // при открытии изделия чистим историю
       if (scheme._attr._loading) {
@@ -88,7 +91,7 @@ class UndoRedo {
    */
   calculate(pos) {
     const {_diff} = this;
-    const curr = _diff[0]._clone();
+    const curr = $p.utils._clone(_diff[0]);
     for (let i = 1; i < _diff.length && i <= pos; i++) {
       _diff[i].forEach((change) => {
         DeepDiff.applyChange(curr, true, change);
@@ -99,7 +102,8 @@ class UndoRedo {
 
 
   save_snapshot(scheme) {
-    const curr = scheme.ox._obj._clone(['_row', 'extra_fields', 'glasses', 'specification', 'predefined_name']);
+    const {utils} = $p;
+    const curr = utils._clone(utils._mixin({}, scheme.ox._obj, null, ['_row', 'extra_fields', 'glasses', 'specification', 'predefined_name']));
     const {_diff, _pos} = this;
     if (!_diff.length) {
       _diff.push(curr);

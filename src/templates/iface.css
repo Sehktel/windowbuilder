@@ -1,3 +1,9 @@
+@media print  {
+  #root {
+    display: none;
+  }
+}
+
 .md_column320 {
 	width: 48%;
 	min-width: 320px;
@@ -76,6 +82,24 @@
 	padding: 0px 4px;
 }
 
+.toppos {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  background: rgba(255,255,255,.8);
+  padding: 0px 4px;
+  font-size: larger;
+  cursor: help;
+}
+
+.ortpos {
+  transform: rotate(15deg);
+}
+
+.errpos {
+  color: #d9534f;
+}
+
 .pen_cont {
 	position: absolute;
 	font-size: 90%;
@@ -110,7 +134,8 @@
   margin-left:  1px;
   padding-left:  4px;
   padding-right:  4px;
-  cursor: pointer
+  cursor: pointer;
+  user-select: none;
 }
 .rsvg_selected {
   border: 1px silver solid;

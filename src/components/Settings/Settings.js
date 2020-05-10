@@ -1,21 +1,25 @@
 import React, {Component} from 'react';
 import PropTypes from 'prop-types';
 
-import Paper from 'material-ui/Paper';
-import Typography from 'material-ui/Typography';
-import Radio, {RadioGroup} from 'material-ui/Radio';
-import {FormGroup, FormHelperText, FormControl, FormControlLabel} from 'material-ui/Form';
-import TextField from 'material-ui/TextField';
-import Button from 'material-ui/Button';
-import Switch from 'material-ui/Switch';
-import {DialogActions} from 'material-ui/Dialog';
+import Paper from '@material-ui/core/Paper';
+import Typography from '@material-ui/core/Typography';
+import Radio from '@material-ui/core/Radio';
+import RadioGroup from '@material-ui/core/RadioGroup';
+import FormGroup from '@material-ui/core/FormGroup';
+import FormHelperText from '@material-ui/core/FormHelperText';
+import FormControl from '@material-ui/core/FormControl';
+import FormControlLabel from '@material-ui/core/FormControlLabel';
+import TextField from '@material-ui/core/TextField';
+import Button from '@material-ui/core/Button';
+import Switch from '@material-ui/core/Switch';
+import DialogActions from '@material-ui/core/DialogActions';
 
 import Confirm from 'metadata-react/App/Confirm';
 import withStyles from 'metadata-react/styles/paper600';
 
 import {withIface, withPrm} from 'metadata-redux';
 
-import compose from 'recompose/compose';
+import {compose} from 'redux';
 
 class Settings extends Component {
 
@@ -25,6 +29,7 @@ class Settings extends Component {
     title: PropTypes.string,
     couch_direct: PropTypes.bool,
     enable_save_pwd: PropTypes.bool,
+    ram_indexer: PropTypes.bool,
     handleSetPrm: PropTypes.func.isRequired,
     handleIfaceState: PropTypes.func.isRequired,
     classes: PropTypes.object,
@@ -32,41 +37,42 @@ class Settings extends Component {
 
   constructor(props) {
     super(props);
-    const {zone, couch_path, enable_save_pwd, couch_direct} = props;
+    const {zone, couch_path, enable_save_pwd, couch_direct, ram_indexer} = props;
+    const {wsql, job_prm, cat, current_user, pricing} = $p;
 
     let hide_price;
-    if($p.wsql.get_user_param('hide_price_dealer')) {
+    if(wsql.get_user_param('hide_price_dealer')) {
       hide_price = 'dealer';
     }
-    else if($p.wsql.get_user_param('hide_price_manufacturer')) {
+    else if(wsql.get_user_param('hide_price_manufacturer')) {
       hide_price = 'manufacturer';
     }
     else {
       hide_price = 'none';
     }
 
-    let surcharge_internal = $p.wsql.get_user_param('surcharge_internal', 'number');
-    let discount_percent_internal = $p.wsql.get_user_param('discount_percent_internal', 'number');
+    let surcharge_internal = wsql.get_user_param('surcharge_internal', 'number');
+    let discount_percent_internal = wsql.get_user_param('discount_percent_internal', 'number');
     let surcharge_disabled = false;
 
-    if($p.current_user && $p.current_user.partners_uids.length) {
+    if(current_user && current_user.partners_uids.length) {
 
       // если заданы параметры для текущего пользователя - используем их
       if(!surcharge_internal) {
 
-        let partner = $p.cat.partners.get($p.current_user.partners_uids[0]);
+        let partner = cat.partners.get(current_user.partners_uids[0]);
         let prm = {
           calc_order_row: {
-            nom: $p.cat.nom.get(),
+            nom: cat.nom.get(),
             characteristic: {params: {find_rows: () => null}},
             _owner: {_owner: {partner: partner}}
           }
         };
 
-        $p.pricing.price_type(prm);
+        pricing.price_type(prm);
 
-        $p.wsql.set_user_param('surcharge_internal', surcharge_internal = prm.price_type.extra_charge_external);
-        $p.wsql.set_user_param('discount_percent_internal', discount_percent_internal = prm.price_type.discount_external);
+        wsql.set_user_param('surcharge_internal', surcharge_internal = prm.price_type.extra_charge_external);
+        wsql.set_user_param('discount_percent_internal', discount_percent_internal = prm.price_type.discount_external);
       }
     }
     else {
@@ -74,7 +80,7 @@ class Settings extends Component {
     }
 
     this.state = {
-      zone, couch_path, enable_save_pwd, couch_direct, hide_price,
+      zone, couch_path, enable_save_pwd, couch_direct, ram_indexer, use_ram: job_prm.use_ram, hide_price,
       confirm_reset: false, surcharge_internal, discount_percent_internal, surcharge_disabled
     };
   }
@@ -140,14 +146,14 @@ class Settings extends Component {
   render() {
     const {classes} = this.props;
     const {
-      zone, couch_path, enable_save_pwd, couch_direct, confirm_reset, hide_price,
+      zone, couch_path, enable_save_pwd, couch_direct, ram_indexer, use_ram, confirm_reset, hide_price,
       surcharge_internal, discount_percent_internal, surcharge_disabled
     } = this.state;
 
     return (
       <Paper className={classes.root} elevation={4}>
 
-        <Typography variant="title" style={{paddingTop: 16}}>Подключение к базе данных</Typography>
+        <Typography variant="subtitle2" style={{paddingTop: 16}}>Подключение к базе данных</Typography>
 
         <TextField
           fullWidth
@@ -172,24 +178,48 @@ class Settings extends Component {
             <FormControlLabel
               control={<Switch
                 onChange={(event, checked) => this.setState({couch_direct: checked})}
-                checked={couch_direct}/>}
-              label="Прямое подключение без кеширования"
+                checked={Boolean(couch_direct)}/>}
+              label={couch_direct ? "Прямое подключение к серверу" : "Работа через IDB браузера" }
             />
-            <FormHelperText style={{marginTop: -4}}>Отключает режим оффлайн</FormHelperText>
+            <FormHelperText style={{marginTop: -4}}>{couch_direct ? "Оффлайн не используется" : "Автономный режим при недоступности сервера"}</FormHelperText>
           </FormControl>
 
           <FormControl>
             <FormControlLabel
               control={<Switch
                 onChange={(event, checked) => this.setState({enable_save_pwd: checked})}
-                checked={enable_save_pwd}/>}
+                checked={Boolean(enable_save_pwd)}/>}
               label="Разрешить сохранение пароля"
             />
             <FormHelperText style={{marginTop: -4}}>Не требовать повторного ввода пароля</FormHelperText>
           </FormControl>
+
+          <FormControl>
+            <FormControlLabel
+              control={<Switch
+                onChange={(event, checked) => this.setState({ram_indexer: checked})}
+                checked={Boolean(ram_indexer)}/>}
+              label="Использовать Indexer Postgres"
+            />
+            <FormHelperText style={{marginTop: -4}}>Новый источник данных для динсписков</FormHelperText>
+          </FormControl>
+
+          <FormControl>
+            <FormControlLabel
+              control={<Switch
+                onChange={(event, checked) => this.setState({use_ram: checked})}
+                checked={Boolean(use_ram)}/>}
+              label={use_ram ? "Данные ram в IDB браузера" : "Динамический mdm на сервере"}
+            />
+            <FormHelperText style={{marginTop: -4}}>{
+              use_ram ? "Классический режим - справочники в pouchdb" : "Новый режим - mdm auth-proxy"
+            }</FormHelperText>
+          </FormControl>
+
         </FormGroup>
 
-        <Typography variant="title" style={{paddingTop: 16}}>Колонки цен</Typography>
+
+        <Typography variant="subtitle2" style={{paddingTop: 16}}>Колонки цен</Typography>
         <Typography>Настройка видимости колонок в документе &quot;Расчет&quot; и графическом построителе</Typography>
 
         <RadioGroup
@@ -203,7 +233,7 @@ class Settings extends Component {
 
         </RadioGroup>
 
-        <Typography variant="title" style={{paddingTop: 16}}>Наценки и скидки</Typography>
+        <Typography variant="subtitle2" style={{paddingTop: 16}}>Наценки и скидки</Typography>
         <Typography>Значения наценки и скидки по умолчанию, которые дилер предоставляет своим (конечным) покупателям</Typography>
 
         <TextField
