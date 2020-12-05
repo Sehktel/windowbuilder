@@ -10,6 +10,13 @@
 
 ((_mgr) => {
 
+  // дополняем отбор номенклатуры в метаданных заказа
+  const {nom} = _mgr.metadata('production').fields;
+  if(!nom.choice_params) {
+    nom.choice_params = [];
+  }
+  nom.choice_params.push({name: 'is_procedure', path: false});
+
   // переопределяем формирование списка выбора
   const {form, tabular_sections} = _mgr.metadata();
   tabular_sections.production.fields.characteristic._option_list_local = true;
@@ -134,16 +141,16 @@
 
     // дополним base_block шаблонами из систем профилей
     const {base_block} = $p.job_prm.builder;
-    $p.cat.production_params.forEach((o) => {
-      if(!o.is_folder) {
-        o.base_blocks.forEach(({_obj}) => {
-          const calc_order = _mgr.get(_obj.calc_order, false, false);
-          if(base_block.indexOf(calc_order) == -1) {
-            base_block.push(calc_order);
-          }
-        });
-      }
-    });
+    // $p.cat.production_params.forEach((o) => {
+    //   if(!o.is_folder) {
+    //     o.base_blocks.forEach(({_obj}) => {
+    //       const calc_order = _mgr.get(_obj.calc_order, false, false);
+    //       if(base_block.indexOf(calc_order) == -1) {
+    //         base_block.push(calc_order);
+    //       }
+    //     });
+    //   }
+    // });
 
     // загрузим шаблоны пачками по 30 документов
     try {
@@ -179,7 +186,7 @@
     if(typeof src === 'string') {
       src = await _mgr.get(src, 'promise');
     }
-    await src.load_production();
+    await src.load_linked_refs();
     // создаём заказ
     const {organization, partner, contract, ...others} = src._obj;
     const dst = await _mgr.create({date: new Date(), organization, partner, contract});

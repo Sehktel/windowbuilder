@@ -1,3 +1,4 @@
+
 /**
  * ### Разрыв и слияние узла Т
  *
@@ -52,10 +53,13 @@ class ToolCut extends ToolElement{
     }
   }
 
+  /**
+   * по mouseup, выделяем/снимаем выделение профилей
+   * @param event
+   */
   mouseup(event) {
-
     const hitItem = this.project.hitTest(event.point, {fill: true, stroke: false, segments: false});
-    if(hitItem && hitItem.item.parent instanceof $p.EditorInvisible.Profile) {
+    if(hitItem && hitItem.item.parent instanceof Editor.Profile) {
       let item = hitItem.item.parent;
       if(event.modifiers.shift) {
         item.selected = !item.selected;
@@ -76,8 +80,12 @@ class ToolCut extends ToolElement{
 
   }
 
+  /**
+   * создаёт панель команд над узлом
+   */
   create_cont() {
     const {nodes} = this;
+    const {cnn_types} = $p.enm;
     if(!this.cont && nodes.length) {
       const point = nodes[0].profile[nodes[0].point];
       const pt = this.project.view.projectToView(point);
@@ -114,16 +122,16 @@ class ToolCut extends ToolElement{
       }
       for(const btn of buttons) {
         if(!btn.css.includes('tb_disable')) {
-          if(btn.name === 'uncut' && !types.has($p.enm.cnn_types.t) ||
-            btn.name === 'vh' && !types.has($p.enm.cnn_types.ah) ||
-            btn.name === 'hv' && !types.has($p.enm.cnn_types.av) ||
-            btn.name === 'diagonal' && !types.has($p.enm.cnn_types.ad)
+          if(btn.name === 'uncut' && !types.has(cnn_types.t) ||
+            btn.name === 'vh' && !types.has(cnn_types.ah) ||
+            btn.name === 'hv' && !types.has(cnn_types.av) ||
+            btn.name === 'diagonal' && !types.has(cnn_types.ad)
           ){
             btn.css += ' tb_disable';
           }
           else if(['diagonal', 'vh', 'hv'].includes(btn.name) && nodes.every(({profile, point}) => {
             const {cnn} = profile.rays[point];
-            const type = btn.name === 'diagonal' ? $p.enm.cnn_types.ad : (btn.name === 'vh' ? $p.enm.cnn_types.ah : $p.enm.cnn_types.av);
+            const type = btn.name === 'diagonal' ? cnn_types.ad : (btn.name === 'vh' ? cnn_types.ah : cnn_types.av);
             return cnn && cnn.cnn_type === type;
           })){
             btn.css += ' tb_disable';
@@ -153,6 +161,9 @@ class ToolCut extends ToolElement{
     this._scope.canvas_cursor('cursor-arrow-white');
   }
 
+  /**
+   * удаляет панель команд над узлом
+   */
   remove_cont() {
     this.cont && this.cont.unload();
     this.square && this.square.remove();
@@ -161,22 +172,31 @@ class ToolCut extends ToolElement{
     this.square = null;
   }
 
+  /**
+   * switch команды
+   * @param name
+   */
   tb_click(name) {
-    const {nodes} = this;
+    const {nodes, project} = this;
     if(!nodes) {
       return;
     }
+    project.deselectAll();
+    const {cnn_types, orientations} = $p.enm;
     if(['diagonal', 'vh', 'hv'].includes(name)) {
-      const type = name === 'diagonal' ? $p.enm.cnn_types.ad : (name === 'vh' ? $p.enm.cnn_types.ah : $p.enm.cnn_types.av);
+      const type = name === 'diagonal' ? cnn_types.ad : (name === 'vh' ? cnn_types.ah : cnn_types.av);
       for(const {profile, point} of nodes) {
         if(point === 'b' || point === 'e') {
           const cnn = profile.rays[point];
-          if(cnn.cnn.cnn_type !== type) {
-            const cnns = $p.cat.cnns.nom_cnn(profile, cnn.profile, [type]);
-            if(cnns.length) {
-              cnn.cnn = cnns[0];
-              this.project.register_change();
-            }
+          const types = name === 'diagonal' ||
+            (profile.orientation === orientations.vert && name === 'hv') ||
+            (profile.orientation === orientations.hor && name === 'vh') ?
+            [type] :
+            cnn_types.acn.a.filter((v) => v !== cnn_types.ad);
+          const cnns = $p.cat.cnns.nom_cnn(profile, cnn.profile, types);
+          if(cnns.length) {
+            cnn.cnn = cnns[0];
+            this.project.register_change();
           }
         }
       }
@@ -215,7 +235,7 @@ class ToolCut extends ToolElement{
       return;
     }
 
-
+    const {enm: {cnn_types}, cat} = $p;
     let cnn = rack.profile.cnn_point('e');
     const base = cnn.cnn;
     cnn && cnn.profile && cnn.profile_point && cnn.profile.rays[cnn.profile_point].clear(true);
@@ -228,12 +248,13 @@ class ToolCut extends ToolElement{
     }
 
     const loc = generatrix.getNearestLocation(impost.profile[impost.point]);
-    const rack2 = new $p.EditorInvisible.Profile({generatrix: generatrix.splitAt(loc), proto: rack.profile});
+    const rack2 = new Editor.Profile({generatrix: generatrix.splitAt(loc), proto: rack.profile});
 
+    // соединения конца нового профиля из разрыва
     cnn = rack2.cnn_point('e');
     if(base && cnn && cnn.profile) {
       if(!cnn.cnn || cnn.cnn.cnn_type !== base.cnn_type){
-        const cnns = $p.cat.cnns.nom_cnn(rack2, cnn.profile, [base.cnn_type]);
+        const cnns = cat.cnns.nom_cnn(rack2, cnn.profile, [base.cnn_type]);
         if(cnns.includes(base)) {
           cnn.cnn = base;
         }
@@ -243,13 +264,23 @@ class ToolCut extends ToolElement{
       }
       cnn = cnn.profile.cnn_point(cnn.profile_point);
       if(cnn.profile === rack2) {
-        const cnns = $p.cat.cnns.nom_cnn(cnn.parent, rack2, [base.cnn_type]);
-        if(cnns.includes(base)) {
-          cnn.cnn = base;
-        }
-        else if(cnns.length) {
-          cnn.cnn = cnns[0];
-        }
+        cnn.cnn = null;
+      }
+    }
+    const atypes = [cnn_types.ah, cnn_types.av, cnn_types.t];
+
+    cnn = rack2.cnn_point('b');
+    if(cnn && cnn.profile === impost.profile) {
+      const cnns = cat.cnns.nom_cnn(rack2, cnn.profile, atypes);
+      if(cnns.length) {
+        cnn.cnn = cnns[0];
+      }
+    }
+    cnn = rack.profile.cnn_point('e');
+    if(cnn && cnn.profile === impost.profile) {
+      const cnns = cat.cnns.nom_cnn(rack.profile, cnn.profile, atypes);
+      if(cnns.length) {
+        cnn.cnn = cnns[0];
       }
     }
 
@@ -330,13 +361,7 @@ class ToolCut extends ToolElement{
         }
         cnn = cnn.profile.cnn_point(cnn.profile_point);
         if(cnn.profile === rack1.profile) {
-          const cnns = $p.cat.cnns.nom_cnn(cnn.parent, rack1.profile, [base.cnn_type]);
-          if(cnns.includes(base)) {
-            cnn.cnn = base;
-          }
-          else if(cnns.length) {
-            cnn.cnn = cnns[0];
-          }
+          cnn.cnn = null;
         }
       }
     }
@@ -373,7 +398,7 @@ class ToolCut extends ToolElement{
       this.hitItem = this.project.hitTest(event.point, { ends: true, tolerance: hitSize });
     }
 
-    if (this.hitItem && this.hitItem.item.parent instanceof $p.EditorInvisible.ProfileItem) {
+    if (this.hitItem && this.hitItem.item.parent instanceof Editor.ProfileItem) {
       const {activeLayer, magnetism} = this.project;
       const profile = this.hitItem.item.parent;
       if(profile.parent === activeLayer) {
@@ -396,4 +421,6 @@ class ToolCut extends ToolElement{
   }
 
 }
+
+Editor.ToolCut = ToolCut;
 

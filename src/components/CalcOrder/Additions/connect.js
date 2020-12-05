@@ -77,6 +77,7 @@ export function handleAdd() {
     const {_data} = tabular.state._tabular._owner;
     _data._loading = true;
     const row = tabular.state._tabular.add({inset, quantity: 1}, false, props.ProductionRow);
+    tabular.cache_actual = false;
     _data._loading = false;
     row.value_change('inset', 'force', row.inset);
     this.setState({
@@ -108,7 +109,8 @@ export function handleRemove() {
     const {calc_order_row} = selectedRow.characteristic;
     selectedRow._owner.del(selectedRow);
     this.selectedRow = null;
-    tabular.forceUpdate();
+    tabular.cache_actual = false;
+    tabular.setState({selected: {rowIdx: 0}});
     if(state.count) {
       this.setState({
         count: state.count - 1,

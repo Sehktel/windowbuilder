@@ -15,7 +15,7 @@ import RootView from './components/App/RootView';
 // sw для оффлайна и прочих дел
 import * as serviceWorker from './serviceWorker';
 
-const store = configureStore();
+export const store = configureStore();
 
 class RootProvider extends React.Component {
 
@@ -49,8 +49,12 @@ RootProvider.childContextTypes = {
 
 render(<RootProvider />, document.getElementById('root'));
 
-serviceWorker.unregister({
+serviceWorker.register({
   onUpdate() {
-    $p && $p.record_log('Доступен новый контент, обновите страницу');
-  }
+    if($p && $p.eve) {
+      $p.eve.redirect = true;
+    }
+    alert('Код программы обновлён, необходимо перезагрузить страницу');
+    location.reload();
+  },
 });

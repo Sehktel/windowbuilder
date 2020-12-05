@@ -1,8 +1,9 @@
 // модификаторы справочников
 
-// права пользователей
-//import cat_users_acl from "./cat_users_acl";
+import SpecFragment from 'wb-forms/dist/CatCharacteristics/LazySpec';
+import select_template from 'wb-core/dist/select_template';
 
 export default function ($p) {
-	//cat_users_acl($p);
+  $p.cat.characteristics.SpecFragment = SpecFragment;
+  select_template($p);
 }

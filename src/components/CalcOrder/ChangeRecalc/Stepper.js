@@ -1,6 +1,7 @@
 
 import React from 'react';
-import { makeStyles } from '@material-ui/core/styles';
+import PropTypes from 'prop-types';
+import {makeStyles} from '@material-ui/core/styles';
 import Stepper from '@material-ui/core/Stepper';
 import Step from '@material-ui/core/Step';
 import StepLabel from '@material-ui/core/StepLabel';
@@ -62,7 +63,7 @@ export default function HorizontalStepper({setReady, ...props}) {
 
   return (
     <div className={classes.root}>
-      <Stepper activeStep={activeStep} alternativeLabel>
+      <Stepper activeStep={activeStep} >
         {steps.map((label) => (
           <Step key={label}>
             <StepLabel>{label}</StepLabel>
@@ -93,3 +94,7 @@ export default function HorizontalStepper({setReady, ...props}) {
     </div>
   );
 }
+
+HorizontalStepper.propTypes = {
+  setReady: PropTypes.func,
+};

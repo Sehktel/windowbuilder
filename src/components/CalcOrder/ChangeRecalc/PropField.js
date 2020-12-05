@@ -12,11 +12,16 @@ import DataField from 'metadata-react/DataField';
 import withStyles, {extClasses} from 'metadata-react/DataField/stylesPropertyGrid';
 
 function PropField({classes, ...props}) {
-  return <DataField extClasses={extClasses(classes)} fullWidth isTabular={false} {...props}/>;
+  const ext = extClasses(classes);
+  if(props._obj._ch) {
+    ext.label.formControl += ' mod';
+  }
+  return <DataField extClasses={ext} fullWidth isTabular={false} {...props}/>;
 }
 
 PropField.propTypes = {
   classes: PropTypes.object,
+  _obj: PropTypes.object,
 };
 
 export default withStyles(PropField);

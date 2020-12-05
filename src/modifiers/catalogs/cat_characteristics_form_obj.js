@@ -1,5 +1,5 @@
 // индивидуальная форма объекта характеристики
-$p.cat.characteristics.form_obj = function (pwnd, attr) {
+$p.cat.characteristics.form_obj = function (pwnd, attr, handlers) {
 
   const _meta = this.metadata();
 
@@ -20,7 +20,7 @@ $p.cat.characteristics.form_obj = function (pwnd, attr) {
             $p.msg.show_msg({
               type: 'alert-warning',
               text: $p.msg.no_selected_row.replace('%1', 'Спецификация'),
-              title: o.presentation
+              title: o.presentation,
             });
           }
 
@@ -37,6 +37,12 @@ $p.cat.characteristics.form_obj = function (pwnd, attr) {
       if(res) {
         o = res.o;
         wnd = res.wnd;
+        wnd.close_confirmed = true;
+        wnd.elmnts.frm_toolbar.attachEvent('onclick', (btn_id) => {
+          if(btn_id === 'btn_history') {
+            $p.dp.buyers_order.open_component(wnd, {ref: o.ref, cmd: {hfields: null, db: null}, _mgr: this}, handlers, 'ObjHistory');
+          }
+        });
         return res;
       }
     });

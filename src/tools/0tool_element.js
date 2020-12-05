@@ -1,3 +1,4 @@
+
 /**
  * ### Виртуальный инструмент - прототип для инструментов _select_node_ и _select_elm_
  *
@@ -16,7 +17,7 @@
  * @extends paper.Tool
  * @constructor
  */
-class ToolElement extends $p.EditorInvisible.ToolElement {
+class ToolElement extends Editor.ToolElement {
 
   constructor() {
     super();

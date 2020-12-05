@@ -14,12 +14,16 @@ export default function ($p) {
   $p.DpBuyers_order = class DpBuyers_order extends $p.DpBuyers_order {
 
     get clr() {
-      return this.characteristic.clr;
+      const {characteristic} = this;
+      return characteristic.empty() ? this._getter('clr') : characteristic.clr;
     }
 
     set clr(v) {
       const {characteristic, _data} = this;
-      if((!v && characteristic.empty()) || characteristic.clr == v) {
+      if(characteristic.empty()) {
+        return this.__setter('clr', v);
+      }
+      if(!v || characteristic.clr == v) {
         return;
       }
       this._manager.emit_async('update', this, {clr: characteristic.clr});
@@ -28,12 +32,16 @@ export default function ($p) {
     }
 
     get sys() {
-      return this.characteristic.sys;
+      const {characteristic} = this;
+      return characteristic.empty() ? this._getter('sys') : characteristic.sys;
     }
 
     set sys(v) {
       const {characteristic, _data} = this;
-      if((!v && characteristic.empty()) || characteristic.sys == v) {
+      if(characteristic.empty()) {
+        return this.__setter('sys', v);
+      }
+      if(!v || characteristic.sys == v) {
         return;
       }
       this._manager.emit_async('update', this, {sys: characteristic.sys});
@@ -106,7 +114,7 @@ export default function ($p) {
           const {product_params} = _owner._owner;
           const defaults = this.inset.product_params;
           product_params.clear({elm: row});
-          this.inset.used_params.forEach((param) => {
+          this.inset.used_params().forEach((param) => {
             const prow = product_params.add({elm: row, param: param});
 
             // подстановка умолчаний для параметра
@@ -175,11 +183,17 @@ export default function ($p) {
     case 'ChangeRecalc':
       imodule = import('../../components/CalcOrder/ChangeRecalc');
       break;
+      case 'Sysparams':
+        imodule = import('../../components/CalcOrder/Sysparams');
+        break;
     case 'CutEvaluation':
       imodule = import('../../components/CalcOrder/CutEvaluation');
       break;
     case 'DeliveryAddr':
       imodule = import('../../components/DeliveryAddr');
+      break;
+    case 'ObjHistory':
+      imodule = import('wb-forms/dist/ObjHistory');
       break;
     }
     imodule.then((module) => handlers.handleIfaceState({
@@ -196,5 +210,3 @@ export default function ($p) {
   };
 
 }
-
-

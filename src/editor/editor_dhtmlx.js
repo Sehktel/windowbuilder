@@ -1,3 +1,4 @@
+
 /**
  * ### Графический редактор
  *
@@ -146,7 +147,7 @@ class Editor extends $p.EditorInvisible {
      * @type OTooolBar
      * @private
      */
-    this.tb_left = new $p.iface.OTooolBar({wrapper: _editor._wrapper, top: '14px', left: '8px', name: 'left', height: '320px',
+    this.tb_left = new $p.iface.OTooolBar({wrapper: _editor._wrapper, top: '14px', left: '8px', name: 'left', height: '350px',
       image_path: '/imgs/',
       buttons: [
         {name: 'select_node', css: 'tb_icon-arrow-white', title: $p.injected_data['tip_select_node.html']},
@@ -169,6 +170,7 @@ class Editor extends $p.EditorInvisible {
                 ],
             }},
         {name: 'ruler', css: 'tb_ruler_ui', tooltip: 'Позиционирование и сдвиг'},
+        {name: 'stulp_flap', css: 'tb_stulp_flap', tooltip: 'Штульповые створки'},
         {name: 'grid', css: 'tb_grid', tooltip: 'Таблица координат'},
         {name: 'text', css: 'tb_text', tooltip: 'Произвольный текст'},
       ],
@@ -210,6 +212,7 @@ class Editor extends $p.EditorInvisible {
         {name: 'open_spec', text: '<i class="fa fa-table fa-fw"></i>', tooltip: 'Открыть спецификацию изделия', float: 'left'},
         //{name: 'sep_4', text: '', float: 'left'},
         {name: 'dxf', text: 'DXF', tooltip: 'Экспорт в DXF', float: 'left', width: '30px'},
+        {name: 'fragment', text: 'F', tooltip: 'Фрагмент', float: 'left', width: '20px'},
 
         {name: 'close', text: '<i class="fa fa-times fa-fw"></i>', tooltip: 'Закрыть без сохранения', float: 'right'}
 
@@ -234,7 +237,7 @@ class Editor extends $p.EditorInvisible {
           break;
 
         case 'stamp':
-          _editor.load_stamp();
+          _editor.open_templates();
           break;
 
         case 'new_stv':
@@ -270,6 +273,15 @@ class Editor extends $p.EditorInvisible {
 
         case 'dxf':
           $p.md.emit('dxf', _editor.project);
+          break;
+
+        case 'fragment':
+          if(_editor.project._attr.elm_fragment) {
+            _editor.project.reset_fragment();
+          }
+          else {
+            _editor.project.draw_fragment();
+          }
           break;
 
         case 'square':
@@ -388,6 +400,11 @@ class Editor extends $p.EditorInvisible {
     new ToolRuler();
 
     /**
+     * Вставка штульповых створок
+     */
+    new Editor.ToolStulpFlap();
+
+    /**
      * Таблица координат
      */
     new ToolCoordinates();
@@ -400,8 +417,66 @@ class Editor extends $p.EditorInvisible {
 
     if(handlers){
       this.handlers = handlers;
-      handlers.props.match.params.ref && this.open(handlers.props.match.params.ref);
+      const {params} = handlers.props.match;
+      const {project} = this;
+      const {order, action} = $p.utils.prm();
+      if(params.ref) {
+        project.load(params.ref)
+          .then(() => {
+            const {ox} = project;
+            if(ox.is_new() || (order && ox.calc_order != order)) {
+              ox.calc_order = order;
+            }
+            if(ox.calc_order.is_new()) {
+              return ox.calc_order.load();
+            }
+          })
+          .then(() => {
+            const {_dp, ox} = project;
+            let row = ox.calc_order.production.find(ox.ref, 'characteristic');
+            if(!row) {
+              row = ox.calc_order.production.add({characteristic: ox});
+              ox.product = row.row;
+            }
+            if(isNaN(row.quantity)) {
+              row.quantity = 1;
+            }
+            if(action === 'refill' || action === 'new') {
+              const {EditorInvisible: {BuilderElement, Onlay, Filling}, cat: {templates}, utils: {blank}} = $p;
+              const {base_block, refill, sys, clr, params} = templates._select_template;
+              if(!base_block.empty()) {
+                if(refill) {
+                  _dp._data._loading = true;
+                }
+                return project.load_stamp(base_block, false, true)
+                  .then(() => {
+                    if(refill) {
+                      !sys.empty() && project.set_sys(sys, params);
+                      _dp._data._loading = false;
+                      if(!clr.empty()){
+                        ox.clr = clr;
+                        project.getItems({class: BuilderElement}).forEach((elm) => {
+                          if(!(elm instanceof Onlay) && !(elm instanceof Filling)) {
+                            elm.clr = clr;
+                          }
+                        });
+                      }
+                      this._acc.props.reload();
+                    }
+                  })
+                  .catch(() => _dp._data._loading = false);
+              }
+            }
+          })
+          .catch((err) => {
+            console.log(err);
+            $p.ui.dialogs.snack({message: err.message, timeout: 10});
+          });
+      }
     }
+
+    // излучаем событие при создании экземпляра рисовалки
+    $p.md.emit('drawer_created', this);
 
   }
 
@@ -599,7 +674,10 @@ class Editor extends $p.EditorInvisible {
 
       dhtmlxEvent(_canvas, "mousewheel", (evt) => {
 
-        if (evt.shiftKey || evt.altKey) {
+        if(_editor.tool instanceof ToolSelectNode && (_editor.Key.isDown('r') || _editor.Key.isDown('к'))) {
+          return _editor.tool.mousewheel(evt);
+        }
+        else if (evt.shiftKey || evt.altKey) {
           if(evt.shiftKey && !evt.deltaX){
             _editor.view.center = this.changeCenter(_editor.view.center, evt.deltaY, 0, 1);
           }
@@ -668,16 +746,6 @@ class Editor extends $p.EditorInvisible {
     }
   }
 
-  /**
-   * ### Открывает изделие для редактирования
-   * MDI пока не реализовано. Изделие загружается в текущий проект
-   * @method open
-   * @for Editor
-   * @param [ox] {String|DataObj} - ссылка или объект продукции
-   */
-  open(ox) {
-    ox && this.project.load(ox);
-  }
 
   /**
    * ### (Пере)заполняет изделие данными типового блока
@@ -685,25 +753,12 @@ class Editor extends $p.EditorInvisible {
    * - Если текущее изделие не пустое, задаёт вопрос о перезаписи данными типового блока
    * - В обработчик выбора типового блока передаёт метод {{#crossLink "Scheme/load_stamp:method"}}Scheme.load_stamp(){{/crossLink}} текущего изделия
    *
-   * @for Editor
-   * @method load_stamp
+   * @method open_templates
    * @param confirmed {Boolean} - подавляет показ диалога подтверждения перезаполнения
    */
-  load_stamp(confirmed){
-
-    if(!confirmed && this.project.ox.coordinates.count()){
-      dhtmlx.confirm({
-        title: $p.msg.bld_from_blocks_title,
-        text: $p.msg.bld_from_blocks,
-        cancel: $p.msg.cancel,
-        callback: (btn) => btn && this.load_stamp(true)
-      });
-      return;
-    }
-
-    $p.cat.characteristics.form_selection_block(null, {
-      on_select: this.project.load_stamp.bind(this.project)
-    });
+  open_templates(confirmed) {
+    const {project: {ox}, handlers} = this;
+    handlers.handleNavigate(`/templates/?order=${ox.calc_order.ref}&ref=${ox.ref}`);
   }
 
   purge_selection(){
@@ -790,6 +845,32 @@ class Editor extends $p.EditorInvisible {
     return new GlassInserts(glasses);
   }
 
+  fragment_spec(elm, name) {
+    const {ui: {dialogs}, cat: {characteristics}} = $p;
+    if(elm) {
+      return dialogs.alert({
+        timeout: 0,
+        title: `Спецификация ${elm >= 0 ? 'элемента' : 'слоя'} №${Math.abs(elm)} (${name})`,
+        Component: characteristics.SpecFragment,
+        props: {_obj: this.project.ox, elm},
+        initFullScreen: true,
+        hide_btn: true,
+        noSpace: true,
+      });
+    }
+    dialogs.alert({text: 'Элемент не выбран', title: $p.msg.main_title});
+  }
+
+  elm_spec() {
+    const {selected_elm: elm} = this.project;
+    this.fragment_spec(elm ? elm.elm : 0, elm && elm.inset.toString());
+  }
+
+  layer_spec() {
+    const {activeLayer} = this.project;
+    this.fragment_spec(-activeLayer.cnstr, activeLayer.furn.toString());
+  }
+
   /**
    * ### Диалог дополнительных вставок
    *
@@ -848,6 +929,8 @@ class Editor extends $p.EditorInvisible {
    */
   profile_align(name){
 
+    const {project, consts} = this;
+
     // если "все", получаем все профили активного или родительского контура
     if(name == "all"){
 
@@ -860,7 +943,7 @@ class Editor extends $p.EditorInvisible {
       }
 
       // получаем текущий внешний контур
-      const layer = this.project.rootLayer();
+      const layer = project.rootLayer();
 
       layer.profiles.forEach((profile) => {
 
@@ -870,50 +953,52 @@ class Editor extends $p.EditorInvisible {
 
         if(bcnn.profile){
           const d = bcnn.profile.e.getDistance(b);
-          if(d && d < this.consts.sticking_l){
+          if(d > consts.epsilon && d < consts.sticking_l){
             bcnn.profile.e = b;
           }
         }
         if(ecnn.profile){
           const d = ecnn.profile.b.getDistance(e);
-          if(d && d < this.consts.sticking_l){
+          if(d > consts.epsilon && d < consts.sticking_l){
             ecnn.profile.b = e;
           }
         }
 
         let mid;
 
-        if(profile.orientation == $p.enm.orientations.vert){
+        if(profile.orientation == $p.enm.orientations.vert && Math.abs(profile.x1 - profile.x2) > consts.epsilon){
 
-          mid = b.x + e.x / 2;
+          mid = (b.x + e.x) / 2;
 
-          if(mid < layer.bounds.center.x){
+          if(mid < layer.bounds.center.x) {
             mid = Math.min(profile.x1, profile.x2);
             profile.x1 = profile.x2 = mid;
           }
-          else{
+          else {
             mid = Math.max(profile.x1, profile.x2);
             profile.x1 = profile.x2 = mid;
           }
 
-        }else if(profile.orientation == $p.enm.orientations.hor){
+        }
+        else if(profile.orientation == $p.enm.orientations.hor && Math.abs(profile.y1 - profile.y2) > consts.epsilon) {
 
-          mid = b.y + e.y / 2;
+          mid = (b.y + e.y) / 2;
 
-          if(mid < layer.bounds.center.y){
+          if(mid < layer.bounds.center.y) {
             mid = Math.max(profile.y1, profile.y2);
             profile.y1 = profile.y2 = mid;
           }
-          else{
+          else {
             mid = Math.min(profile.y1, profile.y2);
             profile.y1 = profile.y2 = mid;
           }
         }
+        profile.selected = false;
       });
     }
     else{
 
-      const profiles = this.project.selected_profiles();
+      const profiles = project.selected_profiles();
       const contours = [];
       let changed;
 
@@ -986,7 +1071,7 @@ class Editor extends $p.EditorInvisible {
       if(name != 'delete' && profiles.length > 1){
 
         if(changed){
-          this.project.register_change(true);
+          project.register_change(true);
           setTimeout(this.profile_group_align.bind(this, name, profiles), 100);
         }
         else{
@@ -994,7 +1079,7 @@ class Editor extends $p.EditorInvisible {
         }
       }
       else if(changed){
-        this.project.register_change(true);
+        project.register_change(true);
       }
     }
 
@@ -1277,6 +1362,7 @@ class Editor extends $p.EditorInvisible {
     else{
       _attr._align_counter = 0;
       this.project.contours.forEach((l) => l.redraw());
+      return true;
     }
   }
 

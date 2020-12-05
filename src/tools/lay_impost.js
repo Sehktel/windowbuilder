@@ -1,3 +1,4 @@
+
 /**
  * ### Вставка раскладок и импостов
  *
@@ -285,7 +286,7 @@ class ToolLayImpost extends ToolElement {
     this._scope.canvas_cursor('cursor-arrow-lay');
 
     // проверяем существование раскладки
-    if(this.profile.elm_type == $p.enm.elm_types.Раскладка && this.hitItem instanceof $p.EditorInvisible.Filling && this.hitItem.imposts.length) {
+    if(this.profile.elm_type == $p.enm.elm_types.Раскладка && this.hitItem instanceof Editor.Filling && this.hitItem.imposts.length) {
       // если существует, выводим подтверждающее сообщение на добавление
       this.confirmed = false;
       dhtmlx.confirm({
@@ -313,19 +314,23 @@ class ToolLayImpost extends ToolElement {
     }
 
     const {_scope: {consts}, project, profile, hitItem}  = this;
+    const {inset_by_y, inset_by_x} = profile;
 
     this.hitTest(event);
 
     this.paths.forEach((p) => p.removeSegments());
 
-    if (profile.inset_by_y.empty() && profile.inset_by_x.empty()) {
+
+    if (inset_by_y.empty() && inset_by_x.empty()) {
       return;
     }
 
     let bounds, gen, hit = !!hitItem;
 
     if(hit) {
-      bounds = (event.modifiers.control || event.modifiers.option || !hitItem.bounds_light) ? hitItem.bounds : hitItem.bounds_light();
+      bounds = (event.modifiers.control || event.modifiers.option || !hitItem.bounds_light) ?
+        hitItem.bounds :
+        hitItem.bounds_light().expand((inset_by_x || inset_by_y).width(), (inset_by_y || inset_by_x).width());
       gen = hitItem.path;
     }
     else if(profile.w && profile.h) {
@@ -348,7 +353,7 @@ class ToolLayImpost extends ToolElement {
       countx = profile.elm_by_x > 0 ? profile.elm_by_x.round() : Math.round(bounds.width / stepx) - 1,
       w2x = profile.inset_by_x.nom().width / 2,
       w2y = profile.inset_by_y.nom().width / 2,
-      clr = $p.EditorInvisible.BuilderElement.clr_by_clr(profile.clr, false),
+      clr = Editor.BuilderElement.clr_by_clr(profile.clr, false),
       by_x = [], by_y = [], base, pos, path, i, j, pts;
 
     const get_path = (segments, b, e) => {
@@ -670,7 +675,7 @@ class ToolLayImpost extends ToolElement {
       this.hitItem = this.project.hitTest(event.point, {fill: true, class: paper.Path});
     }
 
-    if(this.hitItem && this.hitItem.item.parent instanceof $p.EditorInvisible.Filling) {
+    if(this.hitItem && this.hitItem.item.parent instanceof Editor.Filling) {
       this._scope.canvas_cursor('cursor-lay-impost');
       this.hitItem = this.hitItem.item.parent;
     }
@@ -962,7 +967,7 @@ class ToolLayImpost extends ToolElement {
         }
 
         if (profile.elm_type == $p.enm.elm_types.Раскладка) {
-          nprofiles.push(new $p.EditorInvisible.Onlay({
+          nprofiles.push(new Editor.Onlay({
             generatrix: new paper.Path({
               segments: [p.b, p.e],
             }),
@@ -1006,7 +1011,7 @@ class ToolLayImpost extends ToolElement {
 
           // создаём новые профили
           if (p.e.getDistance(p.b) > proto.inset.nom().width) {
-            nprofiles.push(new $p.EditorInvisible.Profile({
+            nprofiles.push(new Editor.Profile({
               generatrix: new paper.Path({
                 segments: [p.b, p.e],
               }),
@@ -1036,4 +1041,6 @@ class ToolLayImpost extends ToolElement {
       }, 100);
   }
 }
+
+Editor.ToolLayImpost = ToolLayImpost;
 

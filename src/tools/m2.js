@@ -1,3 +1,4 @@
+
 /**
  * ### Разрыв и слияние узла Т
  *
@@ -182,3 +183,4 @@ class ToolM2 extends paper.Tool {
 
 }
 
+Editor.ToolM2 = ToolM2;

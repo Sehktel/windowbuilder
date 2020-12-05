@@ -1,3 +1,4 @@
+
 /**
  * Варианты притягивания узлов
  * @module magnetism
@@ -180,7 +181,12 @@ class Magnetism {
           }
           const delta = p0.subtract(ps);
           selected.profile.move_points(delta, true);
-
+          for(const node of ['b', 'e']) {
+            try {
+              selected.profile.do_sub_bind(selected.profile.rays[node].profile, node);
+            }
+            catch (e) {}
+          }
         }
         else {
           $p.msg.show_msg({
