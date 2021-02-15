@@ -55,7 +55,7 @@ class SchemeLayers {
         if(editor.project.activeLayer != contour){
           contour.activate(true);
         }
-        set_text(this.layer_text(contour));
+        set_text(contour.presentation());
       }
     });
 
@@ -78,12 +78,12 @@ class SchemeLayers {
 
   layer_activated(contour) {
     const {tree} = this;
-    if(contour && contour.cnstr && tree && tree.getSelectedId && contour.cnstr != tree.getSelectedId()){
+    if(contour && !(contour instanceof Editor.ContourNestedContent) && contour.cnstr && tree && tree.getSelectedId && contour.cnstr != tree.getSelectedId()){
       // если выделено несколько створок, переносим выделение на раму
       const layers = [];
       const {project} = this.editor;
       for(const elm of project.getSelectedItems()) {
-        elm.layer instanceof $p.EditorInvisible.Contour && layers.indexOf(elm.layer) === -1 && layers.push(elm.layer);
+        elm.layer instanceof Editor.Contour && layers.indexOf(elm.layer) === -1 && layers.push(elm.layer);
       }
       if(layers.length > 1) {
         const parents = [];
@@ -102,15 +102,18 @@ class SchemeLayers {
 
       if(tree.items[contour.cnstr]){
         tree.selectItem(contour.cnstr);
-        this._set_text(this.layer_text(contour));
+        this._set_text(contour.presentation());
       }
     }
   }
 
   contour_redrawed(contour, bounds) {
+    if(contour instanceof Editor.ContourNestedContent) {
+      return;
+    }
     const {tree} = this;
     if(tree && tree.setItemText){
-      const text = this.layer_text(contour, bounds);
+      const text = contour.presentation(bounds);
       tree.setItemText(contour.cnstr, text);
       if(contour.project.activeLayer == contour){
         this._set_text(text);
@@ -118,16 +121,8 @@ class SchemeLayers {
     }
   }
 
-  layer_text(layer, bounds){
-    if(!bounds){
-      bounds = layer.bounds;
-    }
-    return (layer.parent ? "Створка №" : "Рама №") + layer.cnstr +
-      (bounds ? " " + bounds.width.toFixed() + "х" + bounds.height.toFixed() : "");
-  }
-
   load_layer(layer) {
-    this.tree.addItem(layer.cnstr, this.layer_text(layer), layer.parent ? layer.parent.cnstr : 0);
+    this.tree.addItem(layer.cnstr, layer.presentation(), layer.parent ? layer.parent.cnstr : 0);
     this.tree.checkItem(layer.cnstr);
     layer.contours.forEach((l) => this.load_layer(l));
   }
@@ -558,7 +553,7 @@ class EditorAccordion {
           case 'delete':
             _editor.project.selectedItems.forEach((path) => {
               const {parent} = path;
-              if(parent instanceof $p.EditorInvisible.ProfileItem){
+              if(parent instanceof Editor.ProfileItem){
                 parent.removeChildren();
                 parent.remove();
               }
@@ -574,6 +569,7 @@ class EditorAccordion {
         }
       }
     });
+    _editor.eve.on('set_inset', this.on_set_inset.bind(this));
 
     /**
      * слои в аккордионе
@@ -592,6 +588,8 @@ class EditorAccordion {
       buttons: [
         {name: 'new_layer', text: '<i class="fa fa-file-o fa-fw"></i>', tooltip: 'Добавить рамный контур', float: 'left'},
         {name: 'new_stv', text: '<i class="fa fa-file-code-o fa-fw"></i>', tooltip: $p.msg.bld_new_stv, float: 'left'},
+        {name: 'nested_layer', text: '<i class="fa fa-file-image-o fa-fw"></i>', tooltip: 'Добавить вложенное изделие', float: 'left'},
+        {name: 'virtual_layer', text: '<i class="fa fa-file-excel-o fa-fw"></i>', tooltip: 'Вставить виртуальный слой', float: 'left'},
         {name: 'sep_0', text: '', float: 'left'},
         {name: 'inserts_to_product', text: '<i class="fa fa-tags fa-fw"></i>', tooltip: $p.msg.additional_inserts + ' ' + $p.msg.to_product, float: 'left'},
 
@@ -599,53 +597,53 @@ class EditorAccordion {
 
       ], onclick: (name) => {
 
-        switch(name) {
+        switch (name) {
 
-          case 'new_stv':
-            const fillings = _editor.project.getItems({class: $p.EditorInvisible.Filling, selected: true});
-            if(fillings.length){
-              fillings[0].create_leaf();
-            }
-            else{
-              $p.msg.show_msg({
-                type: "alert-warning",
-                text: $p.msg.bld_new_stv_no_filling,
-                title: $p.msg.bld_new_stv
-              });
-            }
-            break;
+        case 'new_stv':
+        case 'nested_layer':
+        case 'virtual_layer':
+          const fillings = _editor.project.getItems({class: Editor.Filling, selected: true});
+          if(fillings.length) {
+            fillings[0].create_leaf(name);
+          }
+          else {
+            $p.msg.show_msg({
+              type: 'alert-warning',
+              text: $p.msg.bld_new_stv_no_filling,
+              title: $p.msg.bld_new_stv
+            });
+          }
+          break;
 
-          case 'drop_layer':
-            this.tree_layers.drop_layer();
-            break;
+        case 'drop_layer':
+          this.tree_layers.drop_layer();
+          break;
 
-          case 'new_layer':
+        case 'new_layer':
 
-            // создаём пустой новый слой
-            new $p.EditorInvisible.Contour({parent: undefined});
+          // создаём пустой новый слой
+          Editor.Contour.create({project: _editor.project});
+          break;
 
-            // оповещаем мир о новых слоях
-            _editor.eve.emit_async('rows', _editor.project.ox, {constructions: true});
-            break;
+        case 'inserts_to_product':
+          // дополнительные вставки в изделие
+          _editor.additional_inserts();
+          break;
 
-          case 'inserts_to_product':
-            // дополнительные вставки в изделие
-            _editor.additional_inserts();
-            break;
+        case 'inserts_to_contour':
+          // дополнительные вставки в контур
+          _editor.additional_inserts('contour');
+          break;
 
-          case 'inserts_to_contour':
-            // дополнительные вставки в контур
-            _editor.additional_inserts('contour');
-            break;
-
-          default:
-            $p.msg.show_msg(name);
-            break;
+        default:
+          $p.msg.show_msg(name);
+          break;
         }
 
         return false;
       }
     });
+    this._layers._otoolbar.buttons.virtual_layer.classList.add('disabledbutton');
 
     this.tree_layers = new SchemeLayers(this._layers, (text) => {
       this._stv._toolbar.setItemText("info", text);
@@ -751,6 +749,16 @@ class EditorAccordion {
     }
   }
 
+  on_set_inset(elm) {
+    const {_grid} = elm._attr;
+    if(_grid && _grid._obj === elm) {
+      _grid.attach({
+        obj: elm,
+        oxml: elm.oxml
+      });
+    }
+  }
+
   attach(obj) {
     this.tree_layers.attach();
     this.props.attach(obj);
@@ -772,5 +780,4 @@ class EditorAccordion {
   }
 
 }
-
 

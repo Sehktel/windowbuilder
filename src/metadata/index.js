@@ -69,7 +69,25 @@ export function init(store) {
       pouch.remote.ram = new classes.PouchDB(pouch.dbpath('ram'), {auto_compaction: true, revs_limit: 3, owner: pouch, fetch: pouch.fetch});
       pouch.on({
         on_log_in() {
-          return load_ram($p);
+          return load_ram($p)
+            .then(() => {
+              const {roles} = $p.current_user || {};
+              if(roles && roles.includes('ram_editor')) {
+                pouch.local.sync.ram = pouch.remote.ram.changes({
+                  since: 'now',
+                  live: true,
+                  include_docs: true
+                })
+                  .on('change', (change) => {
+                    // информируем мир об изменениях
+                    pouch.load_changes({docs: [change.doc]});
+                    pouch.emit('ram_change', change);
+                  })
+                  .on('error', (err) => {
+                    $p.record_log(err);
+                  });
+              }
+            });
         },
       });
       md.once('predefined_elmnts_inited', () => pouch.emit('pouch_complete_loaded'));
@@ -99,6 +117,10 @@ export function init(store) {
 
         // информируем хранилище о готовности MetaEngine
         dispatch(metaActions.META_LOADED($p));
+
+        // скрипт qrcode грузим асинхронно
+        $p.load_script('/dist/qrcodejs/qrcode.min.js', 'script');
+        $p.load_script('/dist/qrcodejs/qrcode.tosjis.min.js', 'script');
 
         // читаем локальные данные в ОЗУ
         return job_prm.use_ram === false ? load_common($p) : pouch.load_data();

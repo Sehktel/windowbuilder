@@ -24,18 +24,18 @@
         // TODO: штуки сейчас спрятаны в ro и имеют нулевую ширину
         if($p.wsql.get_user_param('hide_price_dealer')) {
           source.headers = '№,Номенклатура,Характеристика,Комментарий,Штук,Длина,Высота,Площадь,Колич.,Ед,Скидка,Цена,Сумма,Скидка&nbsp;дил,Цена&nbsp;дил,Сумма&nbsp;дил';
-          source.widths = '40,200,*,220,0,70,70,70,70,40,70,70,70,0,0,0';
-          source.min_widths = '30,200,220,150,0,70,40,70,70,70,70,70,70,0,0,0';
+          source.widths = '40,200,*,220,0,0,0,70,70,40,70,70,70,0,0,0';
+          source.min_widths = '30,200,220,150,0,0,0,70,70,70,70,70,70,0,0,0';
         }
         else if($p.wsql.get_user_param('hide_price_manufacturer')) {
           source.headers = '№,Номенклатура,Характеристика,Комментарий,Штук,Длина,Высота,Площадь,Колич.,Ед,Скидка&nbsp;пост,Цена&nbsp;пост,Сумма&nbsp;пост,Скидка,Цена,Сумма';
-          source.widths = '40,200,*,220,0,70,70,70,70,40,0,0,0,70,70,70';
-          source.min_widths = '30,200,220,150,0,70,40,70,70,70,0,0,0,70,70,70';
+          source.widths = '40,200,*,220,0,0,0,70,70,40,0,0,0,70,70,70';
+          source.min_widths = '30,200,220,150,0,0,0,70,70,70,0,0,0,70,70,70';
         }
         else {
           source.headers = '№,Номенклатура,Характеристика,Комментарий,Штук,Длина,Высота,Площадь,Колич.,Ед,Скидка&nbsp;пост,Цена&nbsp;пост,Сумма&nbsp;пост,Скидка&nbsp;дил,Цена&nbsp;дил,Сумма&nbsp;дил';
-          source.widths = '40,200,*,220,0,70,70,70,70,40,70,70,70,70,70,70';
-          source.min_widths = '30,200,220,150,0,70,40,70,70,70,70,70,70,70,70,70';
+          source.widths = '40,200,*,220,0,0,0,70,70,40,70,70,70,70,70,70';
+          source.min_widths = '30,200,220,150,0,0,0,70,70,70,70,70,70,70,70,70';
         }
 
         if(user.role_available('СогласованиеРасчетовЗаказов') || user.role_available('РедактированиеЦен') || user.role_available('РедактированиеСкидок')) {
@@ -62,8 +62,7 @@
         }
       });
       const {cat: {characteristics}, enm: {obj_delivery_states}} = $p;
-      characteristics.adapter.load_array(characteristics, refs, false,
-          o.obj_delivery_state == obj_delivery_states.Шаблон && characteristics.adapter.local.templates)
+      characteristics.adapter.load_array(characteristics, refs, false)
         .then(() => {
 
           const footer = {
